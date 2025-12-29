@@ -1,0 +1,1310 @@
+{% extends "layout.html" %}
+
+{% block content %}
+<style>
+    /* ========== 页面布局 - 固定高度等高设计 ========== */
+    .main-row {
+        display: flex;
+        gap: 20px;
+        height: calc(100vh - 180px);
+        min-height: 500px;
+    }
+    
+    .left-panel {
+        flex: 1;
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 15px;
+        height: 100%;
+    }
+    
+    .right-panel {
+        width: 320px;
+        flex-shrink: 0;
+        height: 100%;
+    }
+    
+    /* ========== 左侧卡片 ========== */
+    .text-card {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+        overflow: hidden;
+    }
+    
+    .text-card .card-body {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        padding: 0;
+        min-height: 0;
+        overflow: hidden;
+    }
+    
+    .text-ann-card {
+        flex-shrink: 0;
+    }
+    
+    /* ========== 文本容器 - 滚动区域 ========== */
+    #text-container {
+        flex: 1;
+        padding: 16px 20px;
+        line-height: 2.2;
+        font-size: 16px;
+        letter-spacing: 0.3px;
+        overflow-y: auto;
+        background: linear-gradient(to bottom, #fafbfc, #f5f6f8);
+        border: 1px solid #e8e8e8;
+        border-top: none;
+        margin: 0 15px;
+        min-height: 0;
+    }
+    
+    /* 滚动条美化 */
+    #text-container::-webkit-scrollbar,
+    #word-list::-webkit-scrollbar {
+        width: 8px;
+    }
+    
+    #text-container::-webkit-scrollbar-track,
+    #word-list::-webkit-scrollbar-track {
+        background: #f1f1f1;
+        border-radius: 4px;
+    }
+    
+    #text-container::-webkit-scrollbar-thumb,
+    #word-list::-webkit-scrollbar-thumb {
+        background: #c1c1c1;
+        border-radius: 4px;
+    }
+    
+    #text-container::-webkit-scrollbar-thumb:hover,
+    #word-list::-webkit-scrollbar-thumb:hover {
+        background: #a1a1a1;
+    }
+    
+    /* ========== 词性标注样式 ========== */
+    .word-tag {
+        display: inline;
+        padding: 0 2px;
+        margin: 0 1px;
+        cursor: pointer;
+        transition: all 0.15s;
+        border-radius: 2px;
+        /* 删除 border-bottom 相关 */
+    }
+    
+    .word-tag:hover {
+        filter: brightness(0.92);
+    }
+    
+    .word-tag.selected {
+        outline: 2px solid #3B82F6;
+        outline-offset: 1px;
+        background: #DBEAFE !important;
+    }
+    
+    .word-tag.highlight-flash {
+        animation: wordFlash 1.5s ease-out;
+    }
+    
+    @keyframes wordFlash {
+        0%, 30% { 
+            background: #FCD34D !important;
+            box-shadow: 0 0 8px rgba(245, 158, 11, 0.6);
+        }
+        100% { 
+            box-shadow: none;
+        }
+    }
+    
+    /* 实词 - 颜色调浅 */
+    .pos-n { background: rgba(37, 99, 235, 0.35); }
+    .pos-v { background: rgba(22, 163, 74, 0.35); }
+    .pos-a { background: rgba(234, 88, 12, 0.35); }
+    .pos-m { background: rgba(219, 39, 119, 0.35); }
+    .pos-q { background: rgba(13, 148, 136, 0.35); }
+    .pos-r { background: rgba(79, 70, 229, 0.35); }
+    .pos-t { background: rgba(220, 38, 38, 0.35); }
+    /* 虚词 - 颜色调浅 */
+    .pos-d { background: rgba(139, 92, 246, 0.20); }
+    .pos-p { background: rgba(100, 116, 139, 0.18); }
+    .pos-c { background: rgba(107, 114, 128, 0.15); }
+    .pos-u { background: rgba(156, 163, 175, 0.12); }
+    .pos-w { background: rgba(209, 213, 219, 0.10); }
+    
+    /* ========== 实体标注样式 ========== */
+    .entity-tag {
+        display: inline;
+        border-bottom: 2px solid;
+        padding: 0 2px;
+        margin: 0 1px;
+        cursor: pointer;
+        transition: all 0.2s;
+    }
+    
+    .entity-tag:hover {
+        filter: brightness(0.95);
+    }
+    
+    .entity-tag.highlight-flash {
+        animation: entityFlash 1.5s ease-out;
+    }
+    
+    @keyframes entityFlash {
+        0%, 30% { 
+            background: #FCD34D !important;
+            box-shadow: 0 0 8px rgba(245, 158, 11, 0.6);
+        }
+        100% { 
+            box-shadow: none;
+        }
+    }
+    
+    .entity-人名 { border-color: #2563EB; color: #1e40af; background: rgba(37, 99, 235, 0.12); }
+    .entity-地名 { border-color: #16A34A; color: #166534; background: rgba(22, 163, 74, 0.12); }
+    .entity-组织机构 { border-color: #EA580C; color: #9a3412; background: rgba(234, 88, 12, 0.12); }
+    .entity-时间日期 { border-color: #7C3AED; color: #5b21b6; background: rgba(124, 58, 237, 0.12); }
+    .entity-数值金额 { border-color: #DC2626; color: #991b1b; background: rgba(220, 38, 38, 0.12); }
+    
+    /* ========== 模式切换 ========== */
+    .mode-switch {
+        display: flex;
+        gap: 10px;
+        padding: 12px 15px;
+        background: #f8f9fa;
+        flex-shrink: 0;
+    }
+    
+    .mode-btn {
+        flex: 1;
+        padding: 12px 20px;
+        border: 2px solid #e0e0e0;
+        background: white;
+        border-radius: 8px;
+        cursor: pointer;
+        transition: all 0.3s;
+        font-weight: 600;
+    }
+    
+    .mode-btn:hover {
+        border-color: #3B82F6;
+        background: rgba(59, 130, 246, 0.05);
+    }
+    
+    .mode-btn.active {
+        border-color: #3B82F6;
+        background: #3B82F6;
+        color: white;
+    }
+    
+    /* ========== 图例 ========== */
+    .legend-container {
+        background: #f8f9fa;
+        padding: 12px 15px;
+        border: 1px solid #e8e8e8;
+        border-top: none;
+        margin: 0 15px 15px 15px;
+        flex-shrink: 0;
+    }
+    
+    .legend-title {
+        font-weight: 600;
+        margin-bottom: 10px;
+        font-size: 13px;
+        color: #555;
+    }
+    
+    .legend-items {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+    }
+    
+    .legend-item {
+        display: inline-flex;
+        align-items: center;
+        font-size: 12px;
+        background: white;
+        padding: 4px 8px;
+        border-radius: 4px;
+        border: 1px solid #e0e0e0;
+    }
+    
+    .legend-color {
+        width: 18px;
+        height: 14px;
+        border-radius: 2px;
+        margin-right: 5px;
+        border: 1px solid rgba(0,0,0,0.1);
+    }
+    
+    .legend-n { background: rgba(37, 99, 235, 0.35); }
+    .legend-v { background: rgba(22, 163, 74, 0.35); }
+    .legend-a { background: rgba(234, 88, 12, 0.35); }
+    .legend-m { background: rgba(219, 39, 119, 0.35); }
+    .legend-q { background: rgba(13, 148, 136, 0.35); }
+    .legend-r { background: rgba(79, 70, 229, 0.35); }
+    .legend-t { background: rgba(220, 38, 38, 0.35); }
+    .legend-d { background: rgba(139, 92, 246, 0.20); }
+    .legend-p { background: rgba(100, 116, 139, 0.18); }
+    .legend-c { background: rgba(107, 114, 128, 0.15); }
+    .legend-u { background: rgba(156, 163, 175, 0.12); }
+    .legend-w { background: rgba(209, 213, 219, 0.10); }
+    
+    /* 图例颜色 - 实体 */
+    .legend-人名 { background: rgba(37, 99, 235, 0.4); }
+    .legend-地名 { background: rgba(22, 163, 74, 0.4); }
+    .legend-组织机构 { background: rgba(234, 88, 12, 0.4); }
+    .legend-时间日期 { background: rgba(124, 58, 237, 0.4); }
+    .legend-数值金额 { background: rgba(220, 38, 38, 0.4); }
+    
+    /* ========== 右侧列表 - 等高 ========== */
+    .word-list-card {
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+    }
+    
+    .word-list-card .card-header {
+        flex-shrink: 0;
+        padding: 12px 15px;
+    }
+    
+    .word-list-card .card-body {
+        flex: 1;
+        overflow-y: auto;
+        padding: 0;
+        min-height: 0;
+    }
+    
+    /* ========== 词语列表样式 ========== */
+    .word-item {
+        padding: 10px 15px;
+        border-bottom: 1px solid #eee;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        transition: background 0.2s;
+        cursor: pointer;
+    }
+    
+    .word-item:hover {
+        background: #f0f7ff;
+    }
+    
+    .word-item:last-child {
+        border-bottom: none;
+    }
+    
+    .word-item.highlight {
+        background: #FEF3C7;
+        animation: highlight-fade 2s ease-out forwards;
+    }
+    
+    @keyframes highlight-fade {
+        0% { background: #FCD34D; }
+        100% { background: white; }
+    }
+    
+    /* 左侧：词语文本 */
+    .word-text {
+        font-weight: 600;
+        font-size: 15px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        flex: 1;
+        min-width: 0;
+    }
+    
+    /* 右侧：标签+按钮 */
+    .word-actions {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-shrink: 0;
+        margin-left: 12px;
+    }
+    
+    /* 词性列表标签 - 实词深色 */
+    .word-pos {
+        font-size: 11px;
+        padding: 2px 8px;
+        border-radius: 4px;
+        color: white;
+        font-weight: 500;
+        white-space: nowrap;
+    }
+    
+    .pos-badge-n { background: #2563EB; }
+    .pos-badge-v { background: #16A34A; }
+    .pos-badge-a { background: #EA580C; }
+    .pos-badge-m { background: #DB2777; }
+    .pos-badge-q { background: #0D9488; }
+    .pos-badge-r { background: #4F46E5; }
+    .pos-badge-t { background: #DC2626; }
+    
+    /* 词性列表标签 - 虚词浅色 */
+    .pos-badge-d { background: #A78BFA; }
+    .pos-badge-p { background: #94A3B8; }
+    .pos-badge-c { background: #9CA3AF; }
+    .pos-badge-u { background: #D1D5DB; color: #555; }
+    .pos-badge-w { background: #E5E7EB; color: #666; }
+    
+    /* 实体列表标签 */
+    .word-entity {
+        font-size: 11px;
+        padding: 2px 8px;
+        border-radius: 4px;
+        color: white;
+        font-weight: 500;
+        white-space: nowrap;
+    }
+    
+    .entity-badge-人名 { background: #2563EB; }
+    .entity-badge-地名 { background: #16A34A; }
+    .entity-badge-组织机构 { background: #EA580C; }
+    .entity-badge-时间日期 { background: #7C3AED; }
+    .entity-badge-数值金额 { background: #DC2626; }
+    
+    /* 编辑按钮 */
+    .btn-edit-item {
+        width: 26px;
+        height: 26px;
+        padding: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border: 1px solid #ddd;
+        background: white;
+        border-radius: 4px;
+        color: #666;
+        cursor: pointer;
+        transition: all 0.2s;
+        flex-shrink: 0;
+    }
+    
+    .btn-edit-item:hover {
+        background: #3B82F6;
+        border-color: #3B82F6;
+        color: white;
+    }
+    
+    /* ========== 空状态提示 ========== */
+    .empty-state {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        height: 100%;
+        min-height: 200px;
+        color: #999;
+        padding: 40px;
+    }
+    
+    .empty-state i {
+        font-size: 3rem;
+        opacity: 0.3;
+        margin-bottom: 1rem;
+    }
+    
+    /* ========== 编辑工具栏 ========== */
+    .edit-toolbar {
+        position: fixed;
+        bottom: 20px;
+        left: 50%;
+        transform: translateX(-50%);
+        background: #1E293B;
+        padding: 12px 24px;
+        border-radius: 12px;
+        display: none;
+        gap: 12px;
+        align-items: center;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+        z-index: 1000;
+    }
+    
+    .edit-toolbar.show {
+        display: flex;
+    }
+    
+    .edit-toolbar button {
+        color: white;
+        border: none;
+        padding: 8px 16px;
+        border-radius: 6px;
+        cursor: pointer;
+        font-size: 14px;
+    }
+    
+    .btn-merge { background: #10B981; }
+    .btn-cancel { background: #6B7280; }
+    
+    /* ========== 提示信息 ========== */
+    .edit-hint {
+        background: #EFF6FF;
+        padding: 10px 15px;
+        font-size: 13px;
+        color: #1E40AF;
+        border-left: 4px solid #3B82F6;
+        margin: 0 15px;
+        flex-shrink: 0;
+    }
+    
+    /* ========== 模态框 ========== */
+    .modal-header {
+        background: linear-gradient(135deg, #3B82F6, #60A5FA);
+        color: white;
+    }
+    
+    .pos-btn-grid {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 8px;
+    }
+    
+    .pos-btn-small {
+        padding: 8px;
+        font-size: 13px;
+        border: 2px solid #e0e0e0;
+        border-radius: 6px;
+        background: white;
+        cursor: pointer;
+        transition: all 0.2s;
+        text-align: center;
+    }
+    
+    .pos-btn-small:hover {
+        border-color: #3B82F6;
+        background: #EFF6FF;
+    }
+    
+    .pos-btn-small.active {
+        border-color: #3B82F6;
+        background: #3B82F6;
+        color: white;
+    }
+    
+    /* ========== 文本选择（实体模式） ========== */
+    .entity-mode #text-container {
+        user-select: text;
+        cursor: text;
+    }
+    
+    .entity-mode .entity-tag {
+        cursor: pointer;
+    }
+    
+    .segment-mode #text-container {
+        user-select: none;
+    }
+    
+    /* ========== Toast ========== */
+    .toast-container {
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        z-index: 9999;
+    }
+    
+    .custom-toast {
+        padding: 12px 20px;
+        margin-bottom: 10px;
+        border-radius: 8px;
+        color: white;
+        font-size: 14px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        animation: slideIn 0.3s ease;
+    }
+    
+    .custom-toast.success { background: #10B981; }
+    .custom-toast.error { background: #EF4444; }
+    
+    @keyframes slideIn {
+        from { transform: translateX(100%); opacity: 0; }
+        to { transform: translateX(0); opacity: 1; }
+    }
+</style>
+
+<div class="page-header">
+    <div class="d-flex justify-content-between align-items-center">
+        <div>
+            <h2><i class="bi bi-file-text-fill text-primary me-2"></i> {{ file.filename }}</h2>
+            <p class="text-muted mb-0">文本标注系统</p>
+        </div>
+        <div class="d-flex gap-2">
+            <button class="btn btn-primary" onclick="smartAnnotate()">
+                <i class="bi bi-magic me-1"></i> 智能标注
+            </button>
+            <button class="btn btn-warning" onclick="clearAllAnnotations()">
+                <i class="bi bi-eraser me-1"></i> 清空标注
+            </button>
+            <button class="btn btn-success" onclick="saveAllAnnotations()">
+                <i class="bi bi-save me-1"></i> 保存标注
+            </button>
+            <a href="/" class="btn btn-outline-secondary">
+                <i class="bi bi-arrow-left me-1"></i> 返回
+            </a>
+        </div>
+    </div>
+</div>
+
+<div class="row main-row">
+    <div class="col-lg-9 left-panel">
+        <!-- 文本内容卡片 -->
+        <div class="card text-card">
+            <div class="card-header bg-white py-2">
+                <h6 class="mb-0"><i class="bi bi-text-paragraph text-primary me-2"></i>文本内容</h6>
+            </div>
+            <div class="card-body">
+                <div class="mode-switch">
+                    <button class="mode-btn active" data-mode="segment" onclick="switchMode('segment')">
+                        <i class="bi bi-scissors"></i> 分词和词性标注
+                    </button>
+                    <button class="mode-btn" data-mode="entity" onclick="switchMode('entity')">
+                        <i class="bi bi-tags"></i> 命名实体标注
+                    </button>
+                </div>
+                <div class="edit-hint" id="mode-hint">
+                    <strong>分词模式：</strong>单击词语可编辑并定位 | Ctrl+单击选择多个词进行合并
+                </div>
+                <div id="text-container" class="segment-mode"></div>
+                <div class="legend-container" id="legend-container">
+                    <div class="legend-title" id="legend-title">📝 词性颜色说明（实词深色 · 虚词浅色）</div>
+                    <div class="legend-items" id="legend-items"></div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 文本整体标注卡片 -->
+        <div class="card text-ann-card">
+            <div class="card-header bg-white py-2">
+                <h6 class="mb-0"><i class="bi bi-tags text-primary me-2"></i>文本整体标注</h6>
+            </div>
+            <div class="card-body">
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <label class="form-label fw-bold">文本分类</label>
+                        <select class="form-select" id="text-category">
+                            <option value="">-- 选择分类 --</option>
+                            <option value="新闻时事">📰 新闻时事</option>
+                            <option value="科技数码">💻 科技数码</option>
+                            <option value="财经金融">💰 财经金融</option>
+                            <option value="体育运动">🏀 体育运动</option>
+                            <option value="娱乐影视">🎬 娱乐影视</option>
+                            <option value="教育学术">📚 教育学术</option>
+                            <option value="法律法规">⚖️ 法律法规</option>
+                            <option value="医疗健康">🏥 医疗健康</option>
+                            <option value="生活服务">🏠 生活服务</option>
+                            <option value="其他">📁 其他</option>
+                        </select>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label fw-bold">文本情感</label>
+                        <select class="form-select" id="text-sentiment">
+                            <option value="">-- 选择情感 --</option>
+                            <option value="积极">😊 积极</option>
+                            <option value="中性">😐 中性</option>
+                            <option value="消极">😔 消极</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 右侧词语列表 -->
+    <div class="col-lg-3 right-panel">
+        <div class="card word-list-card">
+            <div class="card-header bg-white d-flex justify-content-between align-items-center">
+                <h6 class="mb-0" id="word-list-title"><i class="bi bi-list-ul text-primary me-2"></i>词语列表</h6>
+                <span class="badge bg-primary" id="word-count">0</span>
+            </div>
+            <div class="card-body" id="word-list">
+                <div class="empty-state">
+                    <i class="bi bi-info-circle"></i>
+                    <p>点击"智能标注"开始</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 词性编辑模态框 -->
+<div class="modal fade" id="posModal" tabindex="-1">
+    <div class="modal-dialog modal-sm modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header py-2">
+                <h6 class="modal-title mb-0"><i class="bi bi-pencil-square me-2"></i>编辑词性</h6>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body p-3">
+                <input type="hidden" id="current-word-id">
+                <p class="text-center mb-3">
+                    当前词语：<strong id="current-word-text" class="text-primary fs-5"></strong>
+                </p>
+                <div class="pos-btn-grid" id="pos-btn-grid"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 实体编辑模态框 -->
+<div class="modal fade" id="entityModal" tabindex="-1">
+    <div class="modal-dialog modal-sm modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header py-2" style="background: linear-gradient(135deg, #10B981, #34D399);">
+                <h6 class="modal-title mb-0"><i class="bi bi-tag-fill me-2"></i>编辑实体</h6>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body p-3">
+                <input type="hidden" id="entity-id">
+                <p class="text-center mb-3">
+                    当前实体：<strong id="entity-text" class="text-primary fs-5"></strong>
+                </p>
+                <div class="d-grid gap-2">
+                    <button class="btn btn-sm text-white" style="background: #2563EB;" onclick="updateEntity('人名')">👤 人名</button>
+                    <button class="btn btn-sm text-white" style="background: #16A34A;" onclick="updateEntity('地名')">📍 地名</button>
+                    <button class="btn btn-sm text-white" style="background: #EA580C;" onclick="updateEntity('组织机构')">🏢 组织机构</button>
+                    <button class="btn btn-sm text-white" style="background: #7C3AED;" onclick="updateEntity('时间日期')">📅 时间日期</button>
+                    <button class="btn btn-sm text-white" style="background: #DC2626;" onclick="updateEntity('数值金额')">💲 数值金额</button>
+                    <button class="btn btn-sm btn-outline-danger" onclick="deleteEntity()"><i class="bi bi-x-circle me-1"></i>删除实体</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 新增实体模态框 -->
+<div class="modal fade" id="addEntityModal" tabindex="-1">
+    <div class="modal-dialog modal-sm modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header py-2" style="background: linear-gradient(135deg, #10B981, #34D399);">
+                <h6 class="modal-title mb-0"><i class="bi bi-plus-circle me-2"></i>添加实体</h6>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body p-3">
+                <input type="hidden" id="new-entity-start">
+                <input type="hidden" id="new-entity-end">
+                <p class="text-center mb-3">
+                    选中文本：<strong id="new-entity-text" class="text-primary fs-5"></strong>
+                </p>
+                <div class="d-grid gap-2">
+                    <button class="btn btn-sm text-white" style="background: #2563EB;" onclick="addEntity('人名')">👤 人名</button>
+                    <button class="btn btn-sm text-white" style="background: #16A34A;" onclick="addEntity('地名')">📍 地名</button>
+                    <button class="btn btn-sm text-white" style="background: #EA580C;" onclick="addEntity('组织机构')">🏢 组织机构</button>
+                    <button class="btn btn-sm text-white" style="background: #7C3AED;" onclick="addEntity('时间日期')">📅 时间日期</button>
+                    <button class="btn btn-sm text-white" style="background: #DC2626;" onclick="addEntity('数值金额')">💲 数值金额</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="edit-toolbar" id="editToolbar">
+    <span style="color: white;" id="selectedCount">已选择 0 个词</span>
+    <button class="btn-merge" onclick="mergeSelected()"><i class="bi bi-union me-1"></i> 合并</button>
+    <button class="btn-cancel" onclick="clearSelection()"><i class="bi bi-x-lg me-1"></i> 取消</button>
+</div>
+
+<div class="toast-container" id="toastContainer"></div>
+
+<script id="file-data" type="application/json">
+{
+    "fileId": {{ file.id }},
+    "rawText": {{ file.content | tojson }},
+    "textAnn": {
+        "category": {{ (text_ann.text_category if text_ann else "") | tojson }},
+        "sentiment": {{ (text_ann.text_sentiment if text_ann else "") | tojson }}
+    },
+    "wordAnns": {{ word_anns | tojson }},
+    "entityAnns": {{ entity_anns | tojson }}
+}
+</script>
+
+<script>
+// ========== 数据初始化 ==========
+const fileData = JSON.parse(document.getElementById('file-data').textContent);
+const fileId = fileData.fileId;
+const rawText = fileData.rawText;
+let wordAnnotations = fileData.wordAnns || [];
+let entityAnnotations = fileData.entityAnns || [];
+let currentMode = 'segment';
+let selectedWords = [];
+
+// 词性定义
+const posTypes = [
+    {code: 'n', name: '名词', type: '实词'},
+    {code: 'v', name: '动词', type: '实词'},
+    {code: 'a', name: '形容词', type: '实词'},
+    {code: 'm', name: '数词', type: '实词'},
+    {code: 'q', name: '量词', type: '实词'},
+    {code: 'r', name: '代词', type: '实词'},
+    {code: 't', name: '时间词', type: '实词'},
+    {code: 'd', name: '副词', type: '虚词'},
+    {code: 'p', name: '介词', type: '虚词'},
+    {code: 'c', name: '连词', type: '虚词'},
+    {code: 'u', name: '助词', type: '虚词'},
+    {code: 'w', name: '标点', type: '虚词'}
+];
+
+const entityTypes = [
+    {label: '人名'},
+    {label: '地名'},
+    {label: '组织机构'},
+    {label: '时间日期'},
+    {label: '数值金额'}
+];
+
+let posModal, entityModal, addEntityModal;
+
+document.addEventListener('DOMContentLoaded', function() {
+    posModal = new bootstrap.Modal(document.getElementById('posModal'));
+    entityModal = new bootstrap.Modal(document.getElementById('entityModal'));
+    addEntityModal = new bootstrap.Modal(document.getElementById('addEntityModal'));
+    
+    const grid = document.getElementById('pos-btn-grid');
+    grid.innerHTML = posTypes.map(p => 
+        `<button class="pos-btn-small" data-pos="${p.code}" onclick="selectPos('${p.code}', '${p.name}')">${p.name}</button>`
+    ).join('');
+    
+    if (fileData.textAnn.category) {
+        document.getElementById('text-category').value = fileData.textAnn.category;
+    }
+    if (fileData.textAnn.sentiment) {
+        document.getElementById('text-sentiment').value = fileData.textAnn.sentiment;
+    }
+    
+    document.getElementById('text-container').addEventListener('mouseup', handleTextSelection);
+    
+    renderAll();
+    updateLegend();
+});
+
+function switchMode(mode) {
+    currentMode = mode;
+    const container = document.getElementById('text-container');
+    
+    document.querySelectorAll('.mode-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.mode === mode);
+    });
+    
+    const hint = document.getElementById('mode-hint');
+    if (mode === 'segment') {
+        hint.innerHTML = '<strong>分词模式：</strong>单击词语可编辑并定位 | Ctrl+单击选择多个词进行合并';
+        container.classList.remove('entity-mode');
+        container.classList.add('segment-mode');
+        document.getElementById('word-list-title').innerHTML = '<i class="bi bi-list-ul text-primary me-2"></i>词语列表';
+    } else {
+        hint.innerHTML = '<strong>实体模式：</strong>选中文本添加实体 | 单击实体可编辑并定位';
+        container.classList.remove('segment-mode');
+        container.classList.add('entity-mode');
+        document.getElementById('word-list-title').innerHTML = '<i class="bi bi-tags text-primary me-2"></i>实体列表';
+    }
+    
+    clearSelection();
+    renderAll();
+    updateLegend();
+}
+
+function updateLegend() {
+    const title = document.getElementById('legend-title');
+    const items = document.getElementById('legend-items');
+    
+    if (currentMode === 'segment') {
+        title.innerHTML = '📝 词性颜色说明（实词深色 · 虚词浅色）';
+        const shiCi = posTypes.filter(p => p.type === '实词');
+        const xuCi = posTypes.filter(p => p.type === '虚词');
+        items.innerHTML = `
+            ${shiCi.map(p => `<span class="legend-item"><span class="legend-color legend-${p.code}"></span>${p.name}</span>`).join('')}
+            <span class="legend-item" style="background: #f0f0f0; border: none; padding: 4px 6px;">|</span>
+            ${xuCi.map(p => `<span class="legend-item"><span class="legend-color legend-${p.code}"></span>${p.name}</span>`).join('')}
+        `;
+    } else {
+        title.innerHTML = '🏷️ 实体类型说明';
+        items.innerHTML = entityTypes.map(e => `
+            <span class="legend-item"><span class="legend-color legend-${e.label}"></span>${e.label}</span>
+        `).join('');
+    }
+}
+
+function renderAll() {
+    if (currentMode === 'segment') {
+        renderSegmentMode();
+        updateWordList(wordAnnotations);
+    } else {
+        renderEntityMode();
+        updateWordList(entityAnnotations);
+    }
+}
+
+function displayRawText() {
+    document.getElementById('text-container').innerHTML = `<p>${rawText}</p>`;
+}
+
+function renderSegmentMode() {
+    const container = document.getElementById('text-container');
+    
+    if (!wordAnnotations || wordAnnotations.length === 0) {
+        container.innerHTML = `<p>${rawText}</p>`;
+        return;
+    }
+    
+    let html = '';
+    wordAnnotations.forEach(w => {
+        const posClass = 'pos-' + (w.pos || 'n');
+        html += `<span class="word-tag ${posClass}" data-id="${w.id}" 
+                    onclick="handleWordClick(event, ${w.id})">${w.word}</span>`;
+    });
+    
+    container.innerHTML = html;
+}
+
+function renderEntityMode() {
+    const container = document.getElementById('text-container');
+    
+    if (!entityAnnotations || entityAnnotations.length === 0) {
+        container.innerHTML = `<p>${rawText}</p>`;
+        return;
+    }
+    
+    const sorted = [...entityAnnotations].sort((a, b) => a.start_pos - b.start_pos);
+    
+    let html = '';
+    let lastEnd = 0;
+    
+    sorted.forEach(entity => {
+        if (entity.start_pos > lastEnd) {
+            html += rawText.substring(lastEnd, entity.start_pos);
+        }
+        html += `<span class="entity-tag entity-${entity.label}" data-entity-id="${entity.id}" 
+                    onclick="handleEntityClick(event, ${entity.id})">${entity.text}</span>`;
+        lastEnd = entity.end_pos;
+    });
+    
+    if (lastEnd < rawText.length) {
+        html += rawText.substring(lastEnd);
+    }
+    
+    container.innerHTML = html;
+}
+
+function updateWordList(items) {
+    const listContainer = document.getElementById('word-list');
+    const countBadge = document.getElementById('word-count');
+    
+    if (!items || items.length === 0) {
+        countBadge.textContent = '0';
+        listContainer.innerHTML = `
+            <div class="empty-state">
+                <i class="bi bi-info-circle"></i>
+                <p>${currentMode === 'segment' ? '暂无分词结果' : '暂无实体标注'}</p>
+            </div>
+        `;
+        return;
+    }
+    
+    countBadge.textContent = items.length;
+    
+    if (currentMode === 'segment') {
+        listContainer.innerHTML = items.map(w => `
+            <div class="word-item" data-id="${w.id}" onclick="handleListItemClick('word', ${w.id})">
+                <span class="word-text">${w.word}</span>
+                <div class="word-actions">
+                    <span class="word-pos pos-badge-${w.pos}">${w.pos_cn}</span>
+                    <button class="btn-edit-item" onclick="event.stopPropagation(); handleListItemClick('word', ${w.id})" title="编辑词性">
+                        <i class="bi bi-pencil"></i>
+                    </button>
+                </div>
+            </div>
+        `).join('');
+    } else {
+        listContainer.innerHTML = items.map(e => `
+            <div class="word-item" data-entity-id="${e.id}" onclick="handleListItemClick('entity', ${e.id})">
+                <span class="word-text">${e.text}</span>
+                <div class="word-actions">
+                    <span class="word-entity entity-badge-${e.label}">${e.label}</span>
+                    <button class="btn-edit-item" onclick="event.stopPropagation(); handleListItemClick('entity', ${e.id})" title="编辑实体">
+                        <i class="bi bi-pencil"></i>
+                    </button>
+                </div>
+            </div>
+        `).join('');
+    }
+}
+
+// ========== 单击定位 + 编辑功能 ==========
+
+// 文本区域点击：定位到列表 + 打开编辑
+function handleWordClick(event, wordId) {
+    if (currentMode !== 'segment') return;
+    
+    event.stopPropagation();
+    
+    if (event.ctrlKey || event.metaKey) {
+        // Ctrl+点击：选择合并
+        toggleWordSelection(wordId);
+    } else {
+        // 普通点击：定位列表 + 打开编辑
+        if (selectedWords.length > 0) {
+            clearSelection();
+        }
+        scrollToListItem('word', wordId);
+        editWordPos(wordId);
+    }
+}
+
+function handleEntityClick(event, entityId) {
+    event.stopPropagation();
+    // 定位列表 + 打开编辑
+    scrollToListItem('entity', entityId);
+    editEntity(entityId);
+}
+
+// 列表点击：定位到文本 + 打开编辑
+function handleListItemClick(type, id) {
+    scrollToTextItem(type, id);
+    
+    if (type === 'word') {
+        editWordPos(id);
+    } else {
+        editEntity(id);
+    }
+}
+
+// 滚动到列表项并高亮
+function scrollToListItem(type, id) {
+    const listContainer = document.getElementById('word-list');
+    let selector = type === 'word' 
+        ? `.word-item[data-id="${id}"]` 
+        : `.word-item[data-entity-id="${id}"]`;
+    
+    const listItem = listContainer.querySelector(selector);
+    if (listItem) {
+        listItem.scrollIntoView({behavior: 'smooth', block: 'center'});
+        highlightListItem(listItem);
+    }
+}
+
+// 滚动到文本中的元素并高亮
+function scrollToTextItem(type, id) {
+    const textContainer = document.getElementById('text-container');
+    let selector = type === 'word' 
+        ? `.word-tag[data-id="${id}"]` 
+        : `.entity-tag[data-entity-id="${id}"]`;
+    
+    const element = textContainer.querySelector(selector);
+    if (element) {
+        element.scrollIntoView({behavior: 'smooth', block: 'center'});
+        
+        // 移除之前的高亮
+        document.querySelectorAll('.highlight-flash').forEach(el => el.classList.remove('highlight-flash'));
+        
+        // 添加高亮动画
+        element.classList.add('highlight-flash');
+    }
+}
+
+function highlightListItem(item) {
+    // 移除所有高亮
+    document.querySelectorAll('.word-item.highlight').forEach(el => el.classList.remove('highlight'));
+    // 添加高亮
+    item.classList.add('highlight');
+}
+
+// ========== 分词选择合并 ==========
+function toggleWordSelection(wordId) {
+    const index = selectedWords.indexOf(wordId);
+    const element = document.querySelector(`.word-tag[data-id="${wordId}"]`);
+    
+    if (index > -1) {
+        selectedWords.splice(index, 1);
+        element.classList.remove('selected');
+    } else {
+        selectedWords.push(wordId);
+        element.classList.add('selected');
+    }
+    
+    updateEditToolbar();
+}
+
+function updateEditToolbar() {
+    const toolbar = document.getElementById('editToolbar');
+    const countSpan = document.getElementById('selectedCount');
+    
+    if (selectedWords.length > 0) {
+        toolbar.classList.add('show');
+        countSpan.textContent = `已选择 ${selectedWords.length} 个词`;
+    } else {
+        toolbar.classList.remove('show');
+    }
+}
+
+function clearSelection() {
+    selectedWords.forEach(id => {
+        const element = document.querySelector(`.word-tag[data-id="${id}"]`);
+        if (element) element.classList.remove('selected');
+    });
+    selectedWords = [];
+    updateEditToolbar();
+}
+
+function mergeSelected() {
+    if (selectedWords.length < 2) {
+        showToast('请至少选择2个词', 'error');
+        return;
+    }
+    
+    fetch('/api/merge_words', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({word_ids: selectedWords})
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.status === 'success') {
+            showToast(data.message, 'success');
+            clearSelection();
+            smartAnnotate();
+        } else {
+            showToast(data.message || '合并失败', 'error');
+        }
+    });
+}
+
+// ========== 词性编辑 ==========
+function editWordPos(wordId) {
+    const word = wordAnnotations.find(w => w.id === wordId);
+    if (!word) return;
+    
+    document.getElementById('current-word-id').value = wordId;
+    document.getElementById('current-word-text').textContent = word.word;
+    
+    document.querySelectorAll('.pos-btn-small').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.pos === word.pos);
+    });
+    
+    posModal.show();
+}
+
+function selectPos(pos, posName) {
+    const wordId = document.getElementById('current-word-id').value;
+    
+    fetch('/api/update_word_pos', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({id: wordId, pos: pos, pos_cn: posName})
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.status === 'success') {
+            const word = wordAnnotations.find(w => w.id == wordId);
+            if (word) {
+                word.pos = pos;
+                word.pos_cn = posName;
+            }
+            renderAll();
+            posModal.hide();
+            showToast('词性已更新', 'success');
+        }
+    });
+}
+
+// ========== 实体模式文本选择 ==========
+function handleTextSelection(e) {
+    if (currentMode !== 'entity') return;
+    if (e.target.classList.contains('entity-tag')) return;
+    
+    const selection = window.getSelection();
+    const selectedText = selection.toString().trim();
+    
+    if (selectedText.length === 0) return;
+    
+    const startPos = rawText.indexOf(selectedText);
+    if (startPos === -1) {
+        showToast('无法定位选中文本', 'error');
+        selection.removeAllRanges();
+        return;
+    }
+    
+    const endPos = startPos + selectedText.length;
+    
+    const overlapping = entityAnnotations.some(e => 
+        (startPos < e.end_pos && endPos > e.start_pos)
+    );
+    
+    if (overlapping) {
+        showToast('选中区域与现有实体重叠', 'error');
+        selection.removeAllRanges();
+        return;
+    }
+    
+    document.getElementById('new-entity-text').textContent = selectedText;
+    document.getElementById('new-entity-start').value = startPos;
+    document.getElementById('new-entity-end').value = endPos;
+    
+    addEntityModal.show();
+    selection.removeAllRanges();
+}
+
+function addEntity(label) {
+    const text = document.getElementById('new-entity-text').textContent;
+    const startPos = parseInt(document.getElementById('new-entity-start').value);
+    const endPos = parseInt(document.getElementById('new-entity-end').value);
+    
+    fetch('/api/add_entity', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+            file_id: fileId,
+            text: text,
+            label: label,
+            start_pos: startPos,
+            end_pos: endPos
+        })
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.status === 'success') {
+            entityAnnotations.push(data.entity);
+            entityAnnotations.sort((a, b) => a.start_pos - b.start_pos);
+            renderAll();
+            addEntityModal.hide();
+            showToast('实体已添加', 'success');
+        } else {
+            showToast(data.message || '添加失败', 'error');
+        }
+    });
+}
+
+// ========== 实体编辑 ==========
+function editEntity(entityId) {
+    const entity = entityAnnotations.find(e => e.id === entityId);
+    if (!entity) return;
+    
+    document.getElementById('entity-id').value = entityId;
+    document.getElementById('entity-text').textContent = entity.text;
+    
+    entityModal.show();
+}
+
+function updateEntity(label) {
+    const entityId = document.getElementById('entity-id').value;
+    
+    fetch(`/api/update_entity/${entityId}`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({label: label})
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.status === 'success') {
+            const entity = entityAnnotations.find(e => e.id == entityId);
+            if (entity) entity.label = label;
+            renderAll();
+            entityModal.hide();
+            showToast('实体已更新', 'success');
+        }
+    });
+}
+
+function deleteEntity() {
+    const entityId = document.getElementById('entity-id').value;
+    
+    if (!confirm('确定删除此实体？')) return;
+    
+    fetch(`/api/delete_entity/${entityId}`, {method: 'DELETE'})
+    .then(r => r.json())
+    .then(data => {
+        if (data.status === 'success') {
+            entityAnnotations = entityAnnotations.filter(e => e.id != entityId);
+            renderAll();
+            entityModal.hide();
+            showToast('实体已删除', 'success');
+        }
+    });
+}
+
+// ========== 智能标注 ==========
+function smartAnnotate() {
+    if (!confirm('智能标注将清除现有标注，是否继续？')) return;
+    
+    showToast('正在智能标注...', 'success');
+    
+    fetch(`/api/smart_annotate/${fileId}`, {method: 'POST'})
+    .then(r => r.json())
+    .then(data => {
+        if (data.status === 'success') {
+            wordAnnotations = data.word_annotations;
+            entityAnnotations = data.entity_annotations;
+            
+            if (data.text_annotation) {
+                document.getElementById('text-category').value = data.text_annotation.text_category || '';
+                document.getElementById('text-sentiment').value = data.text_annotation.text_sentiment || '';
+            }
+            
+            renderAll();
+            showToast('智能标注完成', 'success');
+        } else {
+            showToast('智能标注失败', 'error');
+        }
+    });
+}
+
+// ========== 保存和清空 ==========
+function saveAllAnnotations() {
+    const data = {
+        file_id: fileId,
+        text_category: document.getElementById('text-category').value,
+        text_sentiment: document.getElementById('text-sentiment').value
+    };
+    
+    fetch('/api/save_all_annotations', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(data)
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.status === 'success') {
+            showToast('保存成功', 'success');
+        } else {
+            showToast('保存失败', 'error');
+        }
+    });
+}
+
+function clearAllAnnotations() {
+    if (!confirm('确定清空所有标注？此操作不可恢复！')) return;
+    
+    fetch(`/api/clear_annotations/${fileId}`, {method: 'POST'})
+    .then(r => r.json())
+    .then(data => {
+        if (data.status === 'success') {
+            wordAnnotations = [];
+            entityAnnotations = [];
+            document.getElementById('text-category').value = '';
+            document.getElementById('text-sentiment').value = '';
+            displayRawText();
+            updateWordList([]);
+            showToast('已清空标注', 'success');
+        }
+    });
+}
+
+// ========== Toast 提示 ==========
+function showToast(message, type = 'success') {
+    const container = document.getElementById('toastContainer');
+    const toast = document.createElement('div');
+    toast.className = `custom-toast ${type}`;
+    toast.innerHTML = `<i class="bi bi-${type === 'success' ? 'check-circle' : 'x-circle'} me-2"></i>${message}`;
+    container.appendChild(toast);
+    
+    setTimeout(() => toast.remove(), 3000);
+}
+</script>
+{% endblock %}

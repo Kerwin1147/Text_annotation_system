@@ -1,0 +1,608 @@
+{% extends "layout.html" %}
+
+{% block content %}
+<style>
+    /* 任务卡片样式 */
+    .task-card {
+        transition: all 0.3s ease;
+    }
+    
+    .task-card:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 10px 20px rgba(0, 0, 0, 0.15);
+    }
+    
+    /* 状态指示器样式 */
+    .status-indicator {
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        display: inline-block;
+        margin-right: 6px;
+    }
+    
+    .status-indicator.pending { background-color: #9e9e9e; }
+    .status-indicator.processing { background-color: #ff9800; }
+    .status-indicator.completed { background-color: #4caf50; }
+    
+    /* 卡片标题样式 - 确保文件名显示 */
+    .card-title {
+        font-weight: 600;
+        color: #333;
+        word-break: break-all;
+    }
+    
+    /* ========== 统计卡片样式优化 ========== */
+    .stat-card {
+        height: 100%;
+        border: none;
+        border-radius: 12px;
+        overflow: hidden;
+    }
+    
+    .stat-card .card-body {
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        text-align: center;
+        padding: 1.5rem;
+    }
+    
+    .stat-number {
+        font-size: 2.5rem;
+        font-weight: 700;
+        color: #ffffff;
+        text-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+    }
+    
+    .stat-label {
+        font-size: 1rem;
+        color: #ffffff;
+        margin-top: 0.5rem;
+        font-weight: 500;
+    }
+    
+    .stat-icon {
+        font-size: 2.5rem;
+        color: rgba(255, 255, 255, 0.9);
+        margin-bottom: 0.5rem;
+    }
+    
+    .stat-card.bg-primary {
+        background: linear-gradient(135deg, #4a6cf7 0%, #6c75f5 100%) !important;
+    }
+    
+    .stat-card.bg-secondary {
+        background: linear-gradient(135deg, #6c757d 0%, #868e96 100%) !important;
+    }
+    
+    .stat-card.bg-warning {
+        background: linear-gradient(135deg, #ffc107 0%, #ffca2c 100%) !important;
+    }
+    
+    .stat-card.bg-success {
+        background: linear-gradient(135deg, #28a745 0%, #34ce57 100%) !important;
+    }
+    
+    /* 操作按钮组样式 */
+    .btn-group-sm .btn {
+        border-radius: 6px;
+        margin-right: 8px;
+        margin-bottom: 8px;
+    }
+    
+    /* 模态框样式优化 */
+    .modal-header {
+        background: linear-gradient(135deg, var(--primary-color), #6c75f5);
+        color: white;
+    }
+    
+    /* 搜索框样式 */
+    .search-box {
+        position: relative;
+    }
+    
+    .search-box input {
+        border-radius: 25px;
+        padding: 10px 20px;
+        padding-right: 45px;
+        border: 2px solid #e0e0e0;
+        transition: all 0.3s ease;
+    }
+    
+    .search-box input:focus {
+        border-color: var(--primary-color);
+        box-shadow: 0 0 0 3px rgba(74, 108, 247, 0.1);
+    }
+    
+    .search-box .search-icon {
+        position: absolute;
+        right: 15px;
+        top: 50%;
+        transform: translateY(-50%);
+        color: #999;
+        pointer-events: none;
+    }
+    
+    /* 搜索无结果提示 */
+    .no-results {
+        display: none;
+        text-align: center;
+        padding: 3rem;
+        color: #6c757d;
+    }
+    
+    .no-results.show {
+        display: block;
+    }
+    
+    .no-results i {
+        font-size: 3rem;
+        opacity: 0.3;
+        margin-bottom: 1rem;
+    }
+    
+    /* ========== 新建任务选项卡样式优化 ========== */
+    .nav-tabs {
+        border-bottom: 2px solid #e9ecef;
+        padding: 0 1rem;
+        background-color: #f8f9fa;
+    }
+    
+    .nav-tabs .nav-link {
+        border: none;
+        border-bottom: 3px solid transparent;
+        color: #6c757d;
+        font-weight: 600;
+        padding: 1rem 1.5rem;
+        margin-bottom: -2px;
+        transition: all 0.3s ease;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+    
+    .nav-tabs .nav-link:hover {
+        border-color: transparent;
+        color: var(--primary-color);
+        background-color: rgba(74, 108, 247, 0.05);
+    }
+    
+    .nav-tabs .nav-link.active {
+        color: var(--primary-color);
+        background-color: #ffffff;
+        border-bottom-color: var(--primary-color);
+    }
+    
+    .nav-tabs .nav-link i {
+        font-size: 1.2rem;
+    }
+    
+    /* 选项卡内容区域 */
+    .tab-content {
+        background-color: #ffffff;
+    }
+    
+    .tab-pane .modal-body {
+        padding: 1.5rem;
+    }
+    
+    /* 表单样式优化 */
+    .tab-pane .form-label {
+        font-weight: 600;
+        color: #333;
+        margin-bottom: 0.5rem;
+    }
+    
+    .tab-pane .form-control {
+        border-radius: 8px;
+        border: 2px solid #e0e0e0;
+        padding: 0.75rem 1rem;
+        transition: all 0.3s ease;
+    }
+    
+    .tab-pane .form-control:focus {
+        border-color: var(--primary-color);
+        box-shadow: 0 0 0 3px rgba(74, 108, 247, 0.1);
+    }
+    
+    .tab-pane .form-text {
+        color: #6c757d;
+        font-size: 0.85rem;
+        margin-top: 0.5rem;
+    }
+    
+    /* 文件上传区域样式 */
+    .file-upload-area {
+        border: 2px dashed #d0d0d0;
+        border-radius: 12px;
+        padding: 2rem;
+        text-align: center;
+        background-color: #f8f9fa;
+        transition: all 0.3s ease;
+        cursor: pointer;
+    }
+    
+    .file-upload-area:hover {
+        border-color: var(--primary-color);
+        background-color: rgba(74, 108, 247, 0.05);
+    }
+    
+    .file-upload-area i {
+        font-size: 3rem;
+        color: var(--primary-color);
+        margin-bottom: 1rem;
+    }
+    
+    .file-upload-area p {
+        margin-bottom: 0.5rem;
+        color: #333;
+        font-weight: 500;
+    }
+    
+    .file-upload-area .form-text {
+        color: #6c757d;
+    }
+    
+    /* 隐藏原始文件输入 */
+    .file-upload-area input[type="file"] {
+        position: absolute;
+        width: 100%;
+        height: 100%;
+        top: 0;
+        left: 0;
+        opacity: 0;
+        cursor: pointer;
+    }
+    
+    /* 模态框底部按钮样式 */
+    .modal-footer {
+        border-top: 1px solid #e9ecef;
+        padding: 1rem 1.5rem;
+    }
+    
+    .modal-footer .btn {
+        padding: 0.6rem 1.5rem;
+        font-weight: 600;
+        border-radius: 8px;
+    }
+    
+    .modal-footer .btn-primary {
+        background: linear-gradient(135deg, var(--primary-color), #6c75f5);
+        border: none;
+    }
+    
+    .modal-footer .btn-primary:hover {
+        background: linear-gradient(135deg, #3a5ce5, #5c65e5);
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(74, 108, 247, 0.4);
+    }
+</style>
+
+<div class="page-header">
+    <div class="d-flex justify-content-between align-items-center">
+        <div>
+            <h2><i class="bi bi-folder-fill text-primary me-2"></i> 任务管理</h2>
+            <p class="text-muted">上传文本数据并开始标注任务</p>
+        </div>
+        <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#uploadModal">
+            <i class="bi bi-plus-circle me-2"></i> 新建任务
+        </button>
+    </div>
+</div>
+
+<!-- 统计卡片 -->
+<div class="row mb-4">
+    <div class="col-lg-3 col-md-6 mb-3">
+        <div class="card stat-card bg-primary">
+            <div class="card-body">
+                <i class="bi bi-file-text-fill stat-icon"></i>
+                <div class="stat-number">{{ stats.total }}</div>
+                <div class="stat-label">总任务数</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-3 col-md-6 mb-3">
+        <div class="card stat-card bg-secondary">
+            <div class="card-body">
+                <i class="bi bi-hourglass-top stat-icon"></i>
+                <div class="stat-number">{{ stats.pending }}</div>
+                <div class="stat-label">未开始任务</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-3 col-md-6 mb-3">
+        <div class="card stat-card bg-warning">
+            <div class="card-body">
+                <i class="bi bi-arrow-repeat stat-icon"></i>
+                <div class="stat-number">{{ stats.processing }}</div>
+                <div class="stat-label">进行中任务</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-3 col-md-6 mb-3">
+        <div class="card stat-card bg-success">
+            <div class="card-body">
+                <i class="bi bi-check-circle-fill stat-icon"></i>
+                <div class="stat-number">{{ stats.completed }}</div>
+                <div class="stat-label">已完成任务</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 搜索框 -->
+<div class="card mb-4">
+    <div class="card-body">
+        <div class="search-box">
+            <input type="text" id="search-input" class="form-control" placeholder="搜索文件名..." autocomplete="off">
+            <i class="bi bi-search search-icon"></i>
+        </div>
+    </div>
+</div>
+
+<!-- 任务列表 -->
+<div class="row" id="task-list">
+    {% for file in files %}
+    <div class="col-lg-6 col-md-12 mb-4 task-item" data-filename="{{ file.filename|lower }}">
+        <div class="card task-card">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-start mb-3">
+                    <div style="flex: 1; min-width: 0;">
+                        <h5 class="card-title">
+                            <i class="bi bi-file-earmark-text-fill text-primary me-2"></i>
+                            {{ file.filename }}
+                        </h5>
+                        <p class="text-sm text-muted">
+                            <i class="bi bi-calendar-date me-1"></i>
+                            {{ file.upload_time.strftime('%Y-%m-%d %H:%M') }}
+                        </p>
+                    </div>
+                    <div>
+                        {% if file.status == 'pending' %}
+                        <span class="badge bg-secondary">
+                            <span class="status-indicator pending"></span>未开始
+                        </span>
+                        {% elif file.status == 'processing' %}
+                        <span class="badge bg-warning text-dark">
+                            <span class="status-indicator processing"></span>进行中
+                        </span>
+                        {% elif file.status == 'completed' %}
+                        <span class="badge bg-success">
+                            <span class="status-indicator completed"></span>已完成
+                        </span>
+                        {% endif %}
+                    </div>
+                </div>
+                
+                <!-- 文件预览 -->
+                <div class="mb-3">
+                    <p class="text-sm text-muted line-clamp-2">{{ file.content[:150] }}{% if file.content|length > 150 %}...{% endif %}</p>
+                </div>
+                
+                <!-- 操作按钮 -->
+                <div class="btn-group-sm" role="group">
+                    <a href="/annotate/{{ file.id }}" class="btn btn-outline-primary">
+                        <i class="bi bi-pencil-square me-1"></i> 进入标注
+                    </a>
+                    {% if file.status == 'processing' %}
+                    <button class="btn btn-outline-info" onclick="markComplete({{ file.id }})">
+                        <i class="bi bi-check2-all me-1"></i> 标记完成
+                    </button>
+                    {% endif %}
+                    {% if file.status == 'completed' %}
+                    <button class="btn btn-outline-success" onclick="exportAnnotations({{ file.id }}, '{{ file.filename }}')">
+                        <i class="bi bi-download me-1"></i> 导出标注
+                    </button>
+                    {% endif %}
+                    <button class="btn btn-outline-danger" onclick="deleteFile({{ file.id }})">
+                        <i class="bi bi-trash me-1"></i> 删除
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+<!-- 搜索无结果提示 -->
+<div class="no-results" id="no-results">
+    <i class="bi bi-search d-block"></i>
+    <h5>未找到匹配的文件</h5>
+    <p class="text-muted">请尝试其他关键词</p>
+</div>
+
+<!-- 空状态 -->
+{% if files|length == 0 %}
+<div class="col-12">
+    <div class="card text-center py-5">
+        <i class="bi bi-file-text-fill text-5xl opacity-25 mb-3" style="font-size: 4rem;"></i>
+        <h5>暂无任务</h5>
+        <p class="text-muted">点击上方"新建任务"按钮上传文本文件</p>
+    </div>
+</div>
+{% endif %}
+
+<!-- 上传文件/输入文本模态框 -->
+<div class="modal fade" id="uploadModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-plus-circle me-2"></i>新建任务</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            
+            <ul class="nav nav-tabs" id="taskTabs" role="tablist">
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link active" id="file-tab" data-bs-toggle="tab" data-bs-target="#file-tab-pane" type="button" role="tab">
+                        <i class="bi bi-file-earmark-arrow-up"></i>
+                        <span>上传文件</span>
+                    </button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="text-tab" data-bs-toggle="tab" data-bs-target="#text-tab-pane" type="button" role="tab">
+                        <i class="bi bi-keyboard"></i>
+                        <span>手动输入</span>
+                    </button>
+                </li>
+            </ul>
+            
+            <div class="tab-content">
+                <!-- 上传文件选项卡 -->
+                <div class="tab-pane fade show active" id="file-tab-pane" role="tabpanel">
+                    <form action="/upload" method="post" enctype="multipart/form-data">
+                        <div class="modal-body">
+                            <div class="mb-3">
+                                <label class="form-label"><i class="bi bi-file-earmark me-2"></i>选择文件</label>
+                                <div class="file-upload-area position-relative">
+                                    <input type="file" class="form-control" name="file" required accept=".txt" id="fileInput">
+                                    <i class="bi bi-cloud-arrow-up d-block"></i>
+                                    <p id="file-name-display">点击或拖拽文件到此处</p>
+                                    <span class="form-text">支持 .txt 格式的文本文件</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">
+                                <i class="bi bi-x-circle me-2"></i>取消
+                            </button>
+                            <button type="submit" class="btn btn-primary">
+                                <i class="bi bi-upload me-2"></i>开始上传
+                            </button>
+                        </div>
+                    </form>
+                </div>
+                
+                <!-- 手动输入选项卡 -->
+                <div class="tab-pane fade" id="text-tab-pane" role="tabpanel">
+                    <form action="/manual_input" method="post">
+                        <div class="modal-body">
+                            <div class="mb-4">
+                                <label class="form-label"><i class="bi bi-tag me-2"></i>任务名称</label>
+                                <input type="text" class="form-control" name="task_name" required placeholder="请输入任务名称">
+                                <div class="form-text">用于标识此任务的名称，将作为文件名保存</div>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label"><i class="bi bi-text-paragraph me-2"></i>文本内容</label>
+                                <textarea class="form-control" name="text_content" rows="10" required placeholder="请输入要标注的文本内容..."></textarea>
+                                <div class="form-text">支持任意格式的文本内容，可直接粘贴</div>
+                            </div>
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">
+                                <i class="bi bi-x-circle me-2"></i>取消
+                            </button>
+                            <button type="submit" class="btn btn-primary">
+                                <i class="bi bi-save me-2"></i>创建任务
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    // 文件上传显示文件名
+    document.addEventListener('DOMContentLoaded', function() {
+        const fileInput = document.getElementById('fileInput');
+        const fileNameDisplay = document.getElementById('file-name-display');
+        
+        if (fileInput && fileNameDisplay) {
+            fileInput.addEventListener('change', function() {
+                if (this.files && this.files.length > 0) {
+                    fileNameDisplay.textContent = this.files[0].name;
+                    fileNameDisplay.style.color = 'var(--primary-color)';
+                    fileNameDisplay.style.fontWeight = '600';
+                } else {
+                    fileNameDisplay.textContent = '点击或拖拽文件到此处';
+                    fileNameDisplay.style.color = '';
+                    fileNameDisplay.style.fontWeight = '';
+                }
+            });
+        }
+    });
+
+    // 搜索功能
+    document.addEventListener('DOMContentLoaded', function() {
+        const searchInput = document.getElementById('search-input');
+        const taskItems = document.querySelectorAll('.task-item');
+        const noResults = document.getElementById('no-results');
+        const taskList = document.getElementById('task-list');
+        
+        function debounce(func, wait) {
+            let timeout;
+            return function executedFunction(...args) {
+                const later = () => { clearTimeout(timeout); func(...args); };
+                clearTimeout(timeout);
+                timeout = setTimeout(later, wait);
+            };
+        }
+        
+        function performSearch() {
+            const searchTerm = searchInput.value.toLowerCase().trim();
+            let visibleCount = 0;
+            
+            taskItems.forEach(item => {
+                const filename = item.dataset.filename;
+                const content = item.querySelector('.line-clamp-2')?.textContent.toLowerCase() || '';
+                
+                if (filename.includes(searchTerm) || content.includes(searchTerm)) {
+                    item.style.display = 'block';
+                    visibleCount++;
+                } else {
+                    item.style.display = 'none';
+                }
+            });
+            
+            if (visibleCount === 0 && searchTerm !== '') {
+                noResults.classList.add('show');
+                taskList.style.display = 'none';
+            } else {
+                noResults.classList.remove('show');
+                taskList.style.display = 'flex';
+                taskList.classList.add('row');
+            }
+        }
+        
+        if (searchInput) {
+            searchInput.addEventListener('input', debounce(performSearch, 200));
+            searchInput.addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') { e.preventDefault(); performSearch(); }
+            });
+            searchInput.addEventListener('keydown', function(e) {
+                if (e.key === 'Escape') { searchInput.value = ''; performSearch(); searchInput.blur(); }
+            });
+        }
+    });
+    
+    // 删除文件
+    function deleteFile(fileId) {
+        if (confirm('确定要删除这个文件吗？删除后将无法恢复！')) {
+            fetch(`/api/delete_file/${fileId}`, { method: 'DELETE' })
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'success') { location.reload(); }
+                else { alert('删除失败: ' + data.message); }
+            })
+            .catch(error => { alert('删除文件时发生错误'); });
+        }
+    }
+
+    // 标记完成
+    function markComplete(fileId) {
+        if (confirm('确定要将此任务标记为已完成吗？')) {
+            fetch(`/api/mark_complete/${fileId}`, { method: 'POST' })
+            .then(response => response.json())
+            .then(data => { if (data.status === 'success') { location.reload(); } });
+        }
+    }
+
+    // 导出标注
+    function exportAnnotations(fileId, filename) {
+        window.location.href = `/api/export_annotations/${fileId}`;
+    }
+</script>
+{% endblock %}

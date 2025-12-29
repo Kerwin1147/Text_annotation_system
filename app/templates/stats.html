@@ -1,0 +1,205 @@
+{% extends "layout.html" %}
+
+{% block content %}
+<style>
+    .stat-card { transition: all 0.3s ease; height: 100%; }
+    .stat-card:hover { transform: translateY(-5px); box-shadow: 0 10px 20px rgba(0, 0, 0, 0.15); }
+    .stat-card .card-body { display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; padding: 1.5rem; }
+    .stat-icon { font-size: 2.5rem; margin-bottom: 0.5rem; opacity: 0.9; }
+    .stat-number { font-size: 2rem; font-weight: 700; color: #fff; }
+    .stat-label { font-size: 0.9rem; color: rgba(255,255,255,0.9); margin-top: 0.25rem; }
+    .chart-container { height: 300px; position: relative; }
+    .progress { height: 10px; border-radius: 5px; }
+    .progress-bar { transition: width 0.6s ease; }
+</style>
+
+<div class="page-header">
+    <h2><i class="bi bi-bar-chart-fill text-primary me-2"></i> 数据统计</h2>
+    <p class="text-muted">查看标注数据统计信息（5种命名实体类型）</p>
+</div>
+
+<div class="row mb-4">
+    <div class="col-lg-3 col-md-6 mb-3">
+        <div class="card stat-card" style="background: linear-gradient(135deg, #4a6cf7, #6c75f5);">
+            <div class="card-body">
+                <i class="bi bi-file-text-fill text-white stat-icon"></i>
+                <div class="stat-number">{{ total_files }}</div>
+                <div class="stat-label">总文件数</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-3 col-md-6 mb-3">
+        <div class="card stat-card" style="background: linear-gradient(135deg, #28a745, #34ce57);">
+            <div class="card-body">
+                <i class="bi bi-tag-fill text-white stat-icon"></i>
+                <div class="stat-number">{{ total_anns }}</div>
+                <div class="stat-label">总实体标注</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-3 col-md-6 mb-3">
+        <div class="card stat-card" style="background: linear-gradient(135deg, #17a2b8, #20c9e0);">
+            <div class="card-body">
+                <i class="bi bi-calculator text-white stat-icon"></i>
+                <div class="stat-number">{{ avg_anns }}</div>
+                <div class="stat-label">平均标注数</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-3 col-md-6 mb-3">
+        <div class="card stat-card" style="background: linear-gradient(135deg, #6f42c1, #8b5cf6);">
+            <div class="card-body">
+                <i class="bi bi-database-fill text-white stat-icon"></i>
+                <div class="stat-number">5</div>
+                <div class="stat-label">实体类别</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-lg-8 mb-4">
+        <div class="card h-100">
+            <div class="card-header bg-white"><h6 class="mb-0"><i class="bi bi-bar-chart-line text-primary me-2"></i>标注类别分布</h6></div>
+            <div class="card-body">
+                {% if total_anns > 0 %}
+                <div class="chart-container"><canvas id="barChart"></canvas></div>
+                {% else %}
+                <div class="text-center py-5 text-muted">
+                    <i class="bi bi-bar-chart fs-1 mb-2 d-block opacity-25"></i>
+                    <p>暂无标注数据</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-4 mb-4">
+        <div class="card h-100">
+            <div class="card-header bg-white"><h6 class="mb-0"><i class="bi bi-pie-chart text-primary me-2"></i>类别占比</h6></div>
+            <div class="card-body">
+                {% if total_anns > 0 %}
+                <div class="chart-container"><canvas id="pieChart"></canvas></div>
+                {% else %}
+                <div class="text-center py-5 text-muted">
+                    <i class="bi bi-pie-chart fs-1 mb-2 d-block opacity-25"></i>
+                    <p>暂无标注数据</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header bg-white"><h6 class="mb-0"><i class="bi bi-graph-up text-primary me-2"></i>各类型分布</h6></div>
+    <div class="card-body">
+        {% if total_anns > 0 %}
+        {% for label, count in stats_data %}
+        <div class="mb-3">
+            <div class="d-flex justify-content-between mb-1">
+                <span class="fw-bold">{{ label }}</span>
+                <span>{{ count }} ({{ "%.1f"|format(count/total_anns*100 if total_anns > 0 else 0) }}%)</span>
+            </div>
+            <div class="progress">
+                <div class="progress-bar" style="width: {{ count/total_anns*100 if total_anns > 0 else 0 }}%; background-color: {{ ['#3B82F6','#10B981','#F59E0B','#8B5CF6','#EF4444'][loop.index0 % 5] }};"></div>
+            </div>
+        </div>
+        {% endfor %}
+        {% else %}
+        <div class="text-center py-4 text-muted">
+            <i class="bi bi-bar-chart fs-1 mb-2 d-block opacity-25"></i>
+            <p>暂无标注数据</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+{% if total_anns > 0 %}
+<script>
+const colors = ['#3B82F6', '#10B981', '#F59E0B', '#8B5CF6', '#EF4444'];
+const labels = {{ labels | tojson }};
+const counts = {{ counts | tojson }};
+
+// 柱状图
+new Chart(document.getElementById('barChart'), {
+    type: 'bar',
+    data: {
+        labels: labels,
+        datasets: [{
+            label: '标注数量',
+            data: counts,
+            backgroundColor: colors.map(c => c + 'cc'),
+            borderColor: colors,
+            borderWidth: 2,
+            borderRadius: 8
+        }]
+    },
+    options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+            legend: { display: false },
+            tooltip: {
+                backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                padding: 12,
+                titleFont: { size: 14 },
+                bodyFont: { size: 13 }
+            }
+        },
+        scales: {
+            y: {
+                beginAtZero: true,
+                ticks: { precision: 0 },
+                grid: { color: 'rgba(0, 0, 0, 0.05)' }
+            },
+            x: {
+                grid: { display: false }
+            }
+        }
+    }
+});
+
+// 饼图
+new Chart(document.getElementById('pieChart'), {
+    type: 'doughnut',
+    data: {
+        labels: labels,
+        datasets: [{
+            data: counts,
+            backgroundColor: colors,
+            borderWidth: 3,
+            borderColor: '#fff',
+            hoverOffset: 10
+        }]
+    },
+    options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+            legend: {
+                position: 'bottom',
+                labels: {
+                    padding: 15,
+                    usePointStyle: true,
+                    font: { size: 12 }
+                }
+            },
+            tooltip: {
+                backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                padding: 12,
+                callbacks: {
+                    label: function(context) {
+                        const label = context.label || '';
+                        const value = context.parsed || 0;
+                        const total = context.dataset.data.reduce((a, b) => a + b, 0);
+                        const percentage = ((value / total) * 100).toFixed(1);
+                        return `${label}: ${value} (${percentage}%)`;
+                    }
+                }
+            }
+        }
+    }
+});
+</script>
+{% endif %}
+{% endblock %}
