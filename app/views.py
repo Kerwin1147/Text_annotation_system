@@ -7,6 +7,9 @@ from sqlalchemy import func
 from datetime import datetime
 import os
 import re
+import csv
+import io
+import chardet
 
 views_bp = Blueprint('views', __name__)
 
@@ -18,9 +21,29 @@ def safe_filename(filename):
     # 移除其他危险字符但保留中文、字母、数字、下划线、点、横线
     filename = re.sub(r'[<>:"|?*]', '_', filename)
     # 确保文件名不为空
-    if not filename or filename.strip() == '' or filename == '.txt':
+    if not filename or filename.strip() == '' or filename in ['.txt', '.csv']:
         filename = f'未命名_{datetime.now().strftime("%Y%m%d_%H%M%S")}.txt'
     return filename.strip()
+
+
+def detect_file_encoding(file_bytes):
+    """检测文件编码"""
+    result = chardet.detect(file_bytes)
+    encoding = result['encoding']
+    confidence = result['confidence']
+    
+    # 如果置信度太低，使用默认编码
+    if confidence < 0.5:
+        encoding = 'utf-8'
+    
+    # 处理一些常见编码别名
+    encoding_map = {
+        'GB2312': 'gbk',
+        'ISO-8859-1': 'latin-1',
+        'Windows-1252': 'latin-1'
+    }
+    
+    return encoding_map.get(encoding, encoding).lower()
 
 
 @views_bp.route('/')
@@ -68,9 +91,15 @@ def upload_file():
         return redirect(url_for('views.index'))
     
     if file and file.filename.endswith('.txt'):
-        # 使用自定义的安全文件名函数，保留中文
         filename = safe_filename(file.filename)
-        content = file.read().decode('utf-8', errors='ignore')
+        
+        try:
+            file_bytes = file.read()
+            encoding = detect_file_encoding(file_bytes)
+            content = file_bytes.decode(encoding, errors='ignore')
+        except Exception as e:
+            flash(f'文件解码失败: {str(e)}', 'error')
+            return redirect(url_for('views.index'))
         
         text_file = TextFile(filename=filename, content=content, status=FileStatus.PENDING)
         db.session.add(text_file)
@@ -79,7 +108,38 @@ def upload_file():
         flash('文件上传成功', 'success')
         return redirect(url_for('views.index'))
     
-    flash('仅支持.txt文件', 'error')
+    if file and file.filename.endswith('.csv'):
+        filename = safe_filename(file.filename)
+        
+        try:
+            file_bytes = file.read()
+            encoding = detect_file_encoding(file_bytes)
+            file_content = file_bytes.decode(encoding, errors='ignore')
+            
+            csv_reader = csv.reader(io.StringIO(file_content))
+            rows = list(csv_reader)
+            
+            if not rows:
+                flash('CSV文件为空', 'error')
+                return redirect(url_for('views.index'))
+            
+            content_lines = []
+            for row in rows:
+                content_lines.append(' '.join(row))
+            
+            content = '\n'.join(content_lines)
+            
+            text_file = TextFile(filename=filename, content=content, status=FileStatus.PENDING)
+            db.session.add(text_file)
+            db.session.commit()
+            
+            flash(f'CSV文件上传成功（编码: {encoding}），共{len(rows)}行数据', 'success')
+            return redirect(url_for('views.index'))
+        except Exception as e:
+            flash(f'CSV文件解析失败: {str(e)}', 'error')
+            return redirect(url_for('views.index'))
+    
+    flash('仅支持.txt和.csv文件', 'error')
     return redirect(url_for('views.index'))
 
 
@@ -125,8 +185,16 @@ def annotate(file_id):
 def statistics():
     """数据统计页面"""
     total_files = TextFile.query.count()
+    
+    # 已标注任务数（进行中 + 已完成）
+    annotated_files = TextFile.query.filter(
+        TextFile.status.in_([FileStatus.PROCESSING, FileStatus.COMPLETED])
+    ).count()
+    
     total_anns = EntityAnnotation.query.count()
-    avg_anns = round(total_anns / total_files, 1) if total_files > 0 else 0
+    
+    # 平均标注数的分母改为已标注任务数
+    avg_anns = round(total_anns / annotated_files, 1) if annotated_files > 0 else 0
     
     entity_distribution = db.session.query(
         EntityAnnotation.label,
@@ -138,6 +206,7 @@ def statistics():
     
     return render_template('stats.html',
                          total_files=total_files,
+                         annotated_files=annotated_files,  # 新增：已标注任务数
                          total_anns=total_anns,
                          avg_anns=avg_anns,
                          stats_data=entity_distribution,

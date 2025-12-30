@@ -63,6 +63,8 @@ class WordAnnotation(db.Model):
     word = db.Column(db.String(100), nullable=False)
     pos = db.Column(db.String(20))  # 12种词性之一
     pos_cn = db.Column(db.String(50))
+    start_pos = db.Column(db.Integer)  # 起始字符位置
+    end_pos = db.Column(db.Integer)    # 结束字符位置
     
     __table_args__ = (db.Index('idx_file_word', 'file_id', 'word_index'),)
     
@@ -73,7 +75,9 @@ class WordAnnotation(db.Model):
             'word_index': self.word_index,
             'word': self.word,
             'pos': self.pos,
-            'pos_cn': self.pos_cn
+            'pos_cn': self.pos_cn,
+            'start_pos': self.start_pos,
+            'end_pos': self.end_pos
         }
 
 

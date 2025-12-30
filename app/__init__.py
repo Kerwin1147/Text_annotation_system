@@ -2,7 +2,6 @@
 from flask import Flask
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
-import os
 
 db = SQLAlchemy()
 migrate = Migrate()
@@ -17,12 +16,9 @@ def create_app():
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
     app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
     
-    # 文件上传配置
-    app.config['UPLOAD_FOLDER'] = os.path.join(app.root_path, 'uploads')
-    app.config['ALLOWED_EXTENSIONS'] = {'txt'}
-    
-    # 确保上传文件夹存在
-    os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+    # ============ 已删除 uploads 相关配置 ============
+    # 文件直接读取内容存入数据库，不需要保存到文件系统
+    app.config['ALLOWED_EXTENSIONS'] = {'txt', 'csv'}
     
     # 初始化扩展
     db.init_app(app)

@@ -93,7 +93,6 @@
         cursor: pointer;
         transition: all 0.15s;
         border-radius: 2px;
-        /* 删除 border-bottom 相关 */
     }
     
     .word-tag:hover {
@@ -108,6 +107,14 @@
     
     .word-tag.highlight-flash {
         animation: wordFlash 1.5s ease-out;
+    }
+    
+    /* 临时高亮框样式 */
+    .word-tag.temp-highlight,
+    .entity-tag.temp-highlight {
+        outline: 3px solid #F59E0B !important;
+        outline-offset: 2px;
+        box-shadow: 0 0 10px rgba(245, 158, 11, 0.5);
     }
     
     @keyframes wordFlash {
@@ -735,6 +742,7 @@ let wordAnnotations = fileData.wordAnns || [];
 let entityAnnotations = fileData.entityAnns || [];
 let currentMode = 'segment';
 let selectedWords = [];
+let currentHighlightedElement = null; // 用于跟踪当前高亮的元素
 
 // 词性定义
 const posTypes = [
@@ -781,9 +789,26 @@ document.addEventListener('DOMContentLoaded', function() {
     
     document.getElementById('text-container').addEventListener('mouseup', handleTextSelection);
     
+    // 点击其他地方时清除临时高亮
+    document.addEventListener('click', function(e) {
+        if (!e.target.closest('.word-item') && !e.target.closest('.word-tag') && !e.target.closest('.entity-tag')) {
+            clearTempHighlight();
+        }
+    });
+    
     renderAll();
     updateLegend();
 });
+
+// 清除临时高亮
+function clearTempHighlight() {
+    if (currentHighlightedElement) {
+        currentHighlightedElement.classList.remove('temp-highlight');
+        currentHighlightedElement = null;
+    }
+    // 也清除所有其他可能的高亮
+    document.querySelectorAll('.temp-highlight').forEach(el => el.classList.remove('temp-highlight'));
+}
 
 function switchMode(mode) {
     currentMode = mode;
@@ -807,6 +832,7 @@ function switchMode(mode) {
     }
     
     clearSelection();
+    clearTempHighlight();
     renderAll();
     updateLegend();
 }
@@ -912,11 +938,11 @@ function updateWordList(items) {
     
     if (currentMode === 'segment') {
         listContainer.innerHTML = items.map(w => `
-            <div class="word-item" data-id="${w.id}" onclick="handleListItemClick('word', ${w.id})">
+            <div class="word-item" data-id="${w.id}" onclick="handleListItemClick(event, 'word', ${w.id})">
                 <span class="word-text">${w.word}</span>
                 <div class="word-actions">
                     <span class="word-pos pos-badge-${w.pos}">${w.pos_cn}</span>
-                    <button class="btn-edit-item" onclick="event.stopPropagation(); handleListItemClick('word', ${w.id})" title="编辑词性">
+                    <button class="btn-edit-item" onclick="handleEditButtonClick(event, 'word', ${w.id})" title="编辑词性">
                         <i class="bi bi-pencil"></i>
                     </button>
                 </div>
@@ -924,11 +950,11 @@ function updateWordList(items) {
         `).join('');
     } else {
         listContainer.innerHTML = items.map(e => `
-            <div class="word-item" data-entity-id="${e.id}" onclick="handleListItemClick('entity', ${e.id})">
+            <div class="word-item" data-entity-id="${e.id}" onclick="handleListItemClick(event, 'entity', ${e.id})">
                 <span class="word-text">${e.text}</span>
                 <div class="word-actions">
                     <span class="word-entity entity-badge-${e.label}">${e.label}</span>
-                    <button class="btn-edit-item" onclick="event.stopPropagation(); handleListItemClick('entity', ${e.id})" title="编辑实体">
+                    <button class="btn-edit-item" onclick="handleEditButtonClick(event, 'entity', ${e.id})" title="编辑实体">
                         <i class="bi bi-pencil"></i>
                     </button>
                 </div>
@@ -965,8 +991,33 @@ function handleEntityClick(event, entityId) {
     editEntity(entityId);
 }
 
-// 列表点击：定位到文本 + 打开编辑
-function handleListItemClick(type, id) {
+// 列表项点击（非编辑按钮）：只定位高亮，不打开编辑框
+function handleListItemClick(event, type, id) {
+    // 如果点击的是编辑按钮，不处理（由handleEditButtonClick处理）
+    if (event.target.closest('.btn-edit-item')) {
+        return;
+    }
+    
+    event.stopPropagation();
+    
+    // 滚动到文本中的元素并添加临时高亮框
+    scrollToTextItemWithTempHighlight(type, id);
+    
+    // 高亮列表项
+    const listContainer = document.getElementById('word-list');
+    let selector = type === 'word' 
+        ? `.word-item[data-id="${id}"]` 
+        : `.word-item[data-entity-id="${id}"]`;
+    const listItem = listContainer.querySelector(selector);
+    if (listItem) {
+        highlightListItem(listItem);
+    }
+}
+
+// 编辑按钮点击：定位 + 打开编辑框
+function handleEditButtonClick(event, type, id) {
+    event.stopPropagation();
+    
     scrollToTextItem(type, id);
     
     if (type === 'word') {
@@ -990,7 +1041,7 @@ function scrollToListItem(type, id) {
     }
 }
 
-// 滚动到文本中的元素并高亮
+// 滚动到文本中的元素并高亮（用于编辑按钮点击）
 function scrollToTextItem(type, id) {
     const textContainer = document.getElementById('text-container');
     let selector = type === 'word' 
@@ -1006,6 +1057,26 @@ function scrollToTextItem(type, id) {
         
         // 添加高亮动画
         element.classList.add('highlight-flash');
+    }
+}
+
+// 滚动到文本中的元素并添加临时高亮框（用于列表项点击）
+function scrollToTextItemWithTempHighlight(type, id) {
+    const textContainer = document.getElementById('text-container');
+    let selector = type === 'word' 
+        ? `.word-tag[data-id="${id}"]` 
+        : `.entity-tag[data-entity-id="${id}"]`;
+    
+    const element = textContainer.querySelector(selector);
+    if (element) {
+        element.scrollIntoView({behavior: 'smooth', block: 'center'});
+        
+        // 清除之前的临时高亮
+        clearTempHighlight();
+        
+        // 添加临时高亮框
+        element.classList.add('temp-highlight');
+        currentHighlightedElement = element;
     }
 }
 
@@ -1053,6 +1124,8 @@ function clearSelection() {
     updateEditToolbar();
 }
 
+// 修复：合并后直接使用返回的数据，不再调用智能标注
+// 修复：合并时传递词语数据给后端
 function mergeSelected() {
     if (selectedWords.length < 2) {
         showToast('请至少选择2个词', 'error');
@@ -1062,17 +1135,27 @@ function mergeSelected() {
     fetch('/api/merge_words', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({word_ids: selectedWords})
+        body: JSON.stringify({
+            word_ids: selectedWords,
+            words_data: wordAnnotations  // 新增：传递词语数据
+        })
     })
     .then(r => r.json())
     .then(data => {
         if (data.status === 'success') {
             showToast(data.message, 'success');
             clearSelection();
-            smartAnnotate();
+            
+            if (data.word_annotations) {
+                wordAnnotations = data.word_annotations;
+                renderAll();
+            }
         } else {
             showToast(data.message || '合并失败', 'error');
         }
+    })
+    .catch(err => {
+        showToast('合并失败，请重试', 'error');
     });
 }
 
@@ -1230,8 +1313,9 @@ function deleteEntity() {
 }
 
 // ========== 智能标注 ==========
+// ========== 智能标注（修改：提示未保存）==========
 function smartAnnotate() {
-    if (!confirm('智能标注将清除现有标注，是否继续？')) return;
+    if (!confirm('智能标注将清除当前标注，是否继续？')) return;
     
     showToast('正在智能标注...', 'success');
     
@@ -1248,19 +1332,26 @@ function smartAnnotate() {
             }
             
             renderAll();
-            showToast('智能标注完成', 'success');
+            // 修改：提示需要保存
+            showToast('智能标注完成，请点击"保存标注"写入数据库', 'success');
         } else {
-            showToast('智能标注失败', 'error');
+            showToast(data.message || '智能标注失败', 'error');
         }
+    })
+    .catch(err => {
+        showToast('智能标注失败，请重试', 'error');
     });
 }
 
 // ========== 保存和清空 ==========
+// ========== 保存标注（修改：发送完整数据）==========
 function saveAllAnnotations() {
     const data = {
         file_id: fileId,
         text_category: document.getElementById('text-category').value,
-        text_sentiment: document.getElementById('text-sentiment').value
+        text_sentiment: document.getElementById('text-sentiment').value,
+        word_annotations: wordAnnotations,      // 新增：发送词语数据
+        entity_annotations: entityAnnotations   // 新增：发送实体数据
     };
     
     fetch('/api/save_all_annotations', {
@@ -1271,10 +1362,13 @@ function saveAllAnnotations() {
     .then(r => r.json())
     .then(data => {
         if (data.status === 'success') {
-            showToast('保存成功', 'success');
+            showToast(`保存成功！词语${data.saved_words || 0}个，实体${data.saved_entities || 0}个`, 'success');
         } else {
-            showToast('保存失败', 'error');
+            showToast(data.message || '保存失败', 'error');
         }
+    })
+    .catch(err => {
+        showToast('保存失败，请重试', 'error');
     });
 }
 

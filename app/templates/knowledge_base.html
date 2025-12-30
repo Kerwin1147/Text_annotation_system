@@ -14,22 +14,110 @@
     .search-input { border-radius: 25px; padding-left: 20px; }
     .delete-btn { opacity: 0; transition: opacity 0.3s ease; }
     .entity-card:hover .delete-btn { opacity: 1; }
-    .entity-list-container { max-height: 600px; overflow-y: auto; }
+    
+    /* ========== 固定高度等高布局 ========== */
+    .knowledge-row {
+        display: flex;
+        gap: 20px;
+        height: 650px;  /* 固定高度 */
+    }
+    
+    .left-panel {
+        width: 350px;
+        flex-shrink: 0;
+        height: 100%;
+    }
+    
+    .right-panel {
+        flex: 1;
+        min-width: 0;
+        height: 100%;
+    }
+    
+    .left-panel .card,
+    .right-panel .card {
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+    }
+    
+    .left-panel .card-header,
+    .right-panel .card-header {
+        flex-shrink: 0;
+    }
+    
+    .left-panel .card-footer {
+        flex-shrink: 0;
+    }
+    
+    .left-panel .card-body {
+        flex: 1;
+        overflow: hidden;
+    }
+    
+    /* 右侧实体列表滚动区域 */
+    .entity-list-container {
+        flex: 1;
+        overflow-y: auto;
+        min-height: 0;
+    }
+    
+    /* 滚动条美化 */
+    .entity-list-container::-webkit-scrollbar {
+        width: 8px;
+    }
+    
+    .entity-list-container::-webkit-scrollbar-track {
+        background: #f1f1f1;
+        border-radius: 4px;
+    }
+    
+    .entity-list-container::-webkit-scrollbar-thumb {
+        background: #c1c1c1;
+        border-radius: 4px;
+    }
+    
+    .entity-list-container::-webkit-scrollbar-thumb:hover {
+        background: #a1a1a1;
+    }
+    
+    /* 响应式调整 */
+    @media (max-width: 992px) {
+        .knowledge-row {
+            flex-direction: column;
+            height: auto;
+        }
+        
+        .left-panel {
+            width: 100%;
+            height: auto;
+        }
+        
+        .right-panel {
+            height: 500px;
+        }
+        
+        .left-panel .card {
+            height: auto;
+        }
+    }
 </style>
 
 <div class="page-header">
     <div class="d-flex justify-content-between align-items-center">
         <div>
             <h2><i class="bi bi-database-fill text-primary me-2"></i> 知识库管理</h2>
-            <p class="text-muted">管理系统自学习的实体知识库（5种实体类型）</p>
+            <p class="text-muted">管理系统自学习的实体知识库（5种命名实体类型）</p>
         </div>
         <span class="badge bg-primary fs-6 px-3 py-2">实体总数: <span id="total-count">{{ total }}</span></span>
     </div>
 </div>
 
-<div class="row">
-    <div class="col-lg-4 mb-4">
-        <div class="card h-100">
+<div class="knowledge-row">
+    <!-- 左侧：添加实体 -->
+    <div class="left-panel">
+        <div class="card">
             <div class="card-header bg-white"><h6 class="mb-0"><i class="bi bi-plus-circle text-primary me-2"></i>添加实体</h6></div>
             <div class="card-body">
                 <form id="add-entity-form">
@@ -60,8 +148,9 @@
         </div>
     </div>
     
-    <div class="col-lg-8">
-        <div class="card h-100">
+    <!-- 右侧：实体列表 -->
+    <div class="right-panel">
+        <div class="card">
             <div class="card-header bg-white">
                 <div class="d-flex justify-content-between align-items-center">
                     <h6 class="mb-0"><i class="bi bi-list-ul text-primary me-2"></i>实体列表</h6>

@@ -5,7 +5,7 @@
 """
 import os
 from app import create_app, db
-from app.models import TextFile, TextAnnotation, WordAnnotation, KnowledgeEntity
+from app.models import TextFile, TextAnnotation, WordAnnotation, EntityAnnotation, KnowledgeEntity
 
 # 创建应用实例
 app = create_app()
@@ -19,6 +19,7 @@ def make_shell_context():
         'TextFile': TextFile,
         'TextAnnotation': TextAnnotation,
         'WordAnnotation': WordAnnotation,
+        'EntityAnnotation': EntityAnnotation,
         'KnowledgeEntity': KnowledgeEntity
     }
 
@@ -78,23 +79,22 @@ def show_stats():
     """显示系统统计信息"""
     total_files = TextFile.query.count()
     total_words = WordAnnotation.query.count()
-    total_entities = KnowledgeEntity.query.count()
+    total_entities = EntityAnnotation.query.count()
+    total_knowledge = KnowledgeEntity.query.count()
     
     print('\n📊 系统统计信息')
     print('=' * 50)
     print(f'文件总数: {total_files}')
     print(f'词语标注总数: {total_words}')
-    print(f'知识库实体总数: {total_entities}')
+    print(f'实体标注总数: {total_entities}')
+    print(f'知识库实体总数: {total_knowledge}')
     
-    # 统计各类实体数量
     from sqlalchemy import func
     entity_stats = db.session.query(
-        WordAnnotation.entity_label,
-        func.count(WordAnnotation.id)
-    ).filter(
-        WordAnnotation.entity_label.isnot(None)
+        EntityAnnotation.label,
+        func.count(EntityAnnotation.id)
     ).group_by(
-        WordAnnotation.entity_label
+        EntityAnnotation.label
     ).all()
     
     if entity_stats:
@@ -110,16 +110,18 @@ if __name__ == '__main__':
     with app.app_context():
         db.create_all()
     
-    # 启动应用
     port = int(os.environ.get('PORT', 5000))
     debug = os.environ.get('FLASK_ENV', 'development') == 'development'
     
-    print('\n' + '=' * 60)
-    print('🚀 文本标注系统启动中...')
-    print('=' * 60)
-    print(f'📍 访问地址: http://127.0.0.1:{port}')
-    print(f'🔧 调试模式: {"开启" if debug else "关闭"}')
-    print(f'📦 支持实体类型: 人名、地名、组织机构、时间日期、数值金额')
-    print('=' * 60 + '\n')
+    # ============ 关键修改：只在主进程打印启动信息 ============
+    # 检查是否是 reloader 子进程，避免重复打印
+    if os.environ.get('WERKZEUG_RUN_MAIN') != 'true':
+        print('\n' + '=' * 60)
+        print('🚀 文本标注系统启动中...')
+        print('=' * 60)
+        print(f'📍 访问地址: http://127.0.0.1:{port}')
+        print(f'🔧 调试模式: {"开启" if debug else "关闭"}')
+        print(f'📦 支持实体类型: 人名、地名、组织机构、时间日期、数值金额')
+        print('=' * 60 + '\n')
     
     app.run(host='0.0.0.0', port=port, debug=debug)
