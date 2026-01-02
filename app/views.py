@@ -217,8 +217,6 @@ def statistics():
 @views_bp.route('/knowledge_base')
 def knowledge():
     """知识库管理页面"""
-    page = request.args.get('page', 1, type=int)
-    per_page = 50
     search = request.args.get('search', '').strip()
     label_filter = request.args.get('label', '').strip()
     
@@ -230,19 +228,14 @@ def knowledge():
     if label_filter:
         query = query.filter_by(label=label_filter)
     
-    # 获取总数（应用筛选条件后）
+    # 获取总数
     total_entities = query.count()
     
-    pagination = query.order_by(KnowledgeEntity.frequency.desc()).paginate(
-        page=page, per_page=per_page, error_out=False
-    )
-    
-    # 直接传递分页后的实体对象列表
-    entities = pagination.items
+    # 获取所有实体（不分页）
+    entities = query.order_by(KnowledgeEntity.frequency.desc()).all()
     
     return render_template('knowledge_base.html',
                          entities=entities,
-                         pagination=pagination,
                          total=total_entities,
                          search=search,
                          label_filter=label_filter)

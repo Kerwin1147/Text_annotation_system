@@ -108,7 +108,7 @@
     <div class="d-flex justify-content-between align-items-center">
         <div>
             <h2><i class="bi bi-database-fill text-primary me-2"></i> 知识库管理</h2>
-            <p class="text-muted">管理系统自学习的实体知识库（5种命名实体类型）</p>
+            <p class="text-muted">管理系统自学习的实体知识库（5种命名实体类型，仅手动标注的实体会加入知识库）</p>
         </div>
         <span class="badge bg-primary fs-6 px-3 py-2">实体总数: <span id="total-count">{{ total }}</span></span>
     </div>
@@ -187,6 +187,9 @@
 </div>
 
 <script>
+    // 保存原始总数
+    const originalTotal = {{ total }};
+    
     // 搜索功能
     document.getElementById('entity-search').addEventListener('input', function(e) {
         const searchTerm = e.target.value.toLowerCase();
@@ -197,14 +200,15 @@
             const text = item.dataset.text;
             const label = item.dataset.label.toLowerCase();
             if (text.includes(searchTerm) || label.includes(searchTerm)) {
-                item.style.display = 'block';
+                item.style.display = '';
                 visibleCount++;
             } else {
                 item.style.display = 'none';
             }
         });
         
-        document.getElementById('total-count').textContent = visibleCount;
+        // 搜索时显示筛选后的数量，清空搜索时显示总数
+        document.getElementById('total-count').textContent = searchTerm ? visibleCount : originalTotal;
     });
     
     // 添加实体
@@ -251,10 +255,12 @@
                 item.style.opacity = '0';
                 setTimeout(() => {
                     item.remove();
-                    const remainingItems = document.querySelectorAll('.entity-item').length;
+                    // 更新计数：只统计可见的实体
+                    const visibleItems = document.querySelectorAll('.entity-item:not([style*="display: none"])');
+                    const remainingItems = visibleItems.length;
                     document.getElementById('total-count').textContent = remainingItems;
                     
-                    if (remainingItems === 0) {
+                    if (document.querySelectorAll('.entity-item').length === 0) {
                         document.getElementById('entity-list').innerHTML = `
                             <div class="col-12 text-center py-5 text-muted">
                                 <i class="bi bi-database fs-1 mb-3 opacity-25 d-block"></i>

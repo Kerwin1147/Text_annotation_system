@@ -869,14 +869,15 @@ function renderAll() {
 }
 
 function displayRawText() {
-    document.getElementById('text-container').innerHTML = `<p>${rawText}</p>`;
+    document.getElementById('text-container').innerHTML = `<p>${escapeHtml(rawText)}</p>`;
 }
 
 function renderSegmentMode() {
     const container = document.getElementById('text-container');
     
     if (!wordAnnotations || wordAnnotations.length === 0) {
-        container.innerHTML = `<p>${rawText}</p>`;
+        // 保持一致，使用 escapeHtml
+        container.innerHTML = `<p>${escapeHtml(rawText)}</p>`;
         return;
     }
     
@@ -884,7 +885,7 @@ function renderSegmentMode() {
     wordAnnotations.forEach(w => {
         const posClass = 'pos-' + (w.pos || 'n');
         html += `<span class="word-tag ${posClass}" data-id="${w.id}" 
-                    onclick="handleWordClick(event, ${w.id})">${w.word}</span>`;
+                    onclick="handleWordClick(event, ${w.id})">${escapeHtml(w.word)}</span>`;
     });
     
     container.innerHTML = html;
@@ -894,7 +895,8 @@ function renderEntityMode() {
     const container = document.getElementById('text-container');
     
     if (!entityAnnotations || entityAnnotations.length === 0) {
-        container.innerHTML = `<p>${rawText}</p>`;
+        // 没有实体时，整个文本作为一个带位置标记的 span
+        container.innerHTML = `<span class="plain-text" data-start="0" data-end="${rawText.length}">${escapeHtml(rawText)}</span>`;
         return;
     }
     
@@ -905,18 +907,30 @@ function renderEntityMode() {
     
     sorted.forEach(entity => {
         if (entity.start_pos > lastEnd) {
-            html += rawText.substring(lastEnd, entity.start_pos);
+            // 普通文本段，添加位置标记
+            const text = rawText.substring(lastEnd, entity.start_pos);
+            html += `<span class="plain-text" data-start="${lastEnd}" data-end="${entity.start_pos}">${escapeHtml(text)}</span>`;
         }
+        // 实体标签也添加位置标记
         html += `<span class="entity-tag entity-${entity.label}" data-entity-id="${entity.id}" 
-                    onclick="handleEntityClick(event, ${entity.id})">${entity.text}</span>`;
+                    data-start="${entity.start_pos}" data-end="${entity.end_pos}"
+                    onclick="handleEntityClick(event, ${entity.id})">${escapeHtml(entity.text)}</span>`;
         lastEnd = entity.end_pos;
     });
     
     if (lastEnd < rawText.length) {
-        html += rawText.substring(lastEnd);
+        const text = rawText.substring(lastEnd);
+        html += `<span class="plain-text" data-start="${lastEnd}" data-end="${rawText.length}">${escapeHtml(text)}</span>`;
     }
     
     container.innerHTML = html;
+}
+
+// 新增：HTML 转义函数，防止 XSS
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
 }
 
 function updateWordList(items) {
@@ -1207,15 +1221,69 @@ function handleTextSelection(e) {
     
     if (selectedText.length === 0) return;
     
-    const startPos = rawText.indexOf(selectedText);
-    if (startPos === -1) {
-        showToast('无法定位选中文本', 'error');
+    const range = selection.getRangeAt(0);
+    
+    // ========== 关键修改：获取实际选中位置 ==========
+    
+    // 找到选区起始所在的 span 元素
+    let startNode = range.startContainer;
+    let startSpan = (startNode.nodeType === Node.TEXT_NODE) ? startNode.parentElement : startNode;
+    
+    // 找到选区结束所在的 span 元素
+    let endNode = range.endContainer;
+    let endSpan = (endNode.nodeType === Node.TEXT_NODE) ? endNode.parentElement : endNode;
+    
+    // 检查是否在普通文本区域选择
+    if (!startSpan.classList.contains('plain-text')) {
+        showToast('请在普通文本区域选择', 'error');
         selection.removeAllRanges();
         return;
     }
     
-    const endPos = startPos + selectedText.length;
+    // 检查是否跨越了多个 span（可能跨越了实体）
+    if (startSpan !== endSpan) {
+        // 检查是否跨越了实体
+        if (!endSpan.classList.contains('plain-text')) {
+            showToast('不能跨越已有实体进行选择', 'error');
+            selection.removeAllRanges();
+            return;
+        }
+        // 跨越多个普通文本段，需要特殊处理
+        // 简化处理：使用起始 span 的位置 + 选中文本长度
+    }
     
+    // 获取 span 在原文中的起始位置
+    const spanRawStart = parseInt(startSpan.dataset.start);
+    
+    // 获取选区在文本节点中的起始偏移
+    const offsetInNode = range.startOffset;
+    
+    // 计算在原文中的实际位置
+    let startPos = spanRawStart + offsetInNode;
+    let endPos = startPos + selectedText.length;
+    
+    // 验证计算是否正确
+    const verifyText = rawText.substring(startPos, endPos);
+    if (verifyText !== selectedText) {
+        console.warn('位置计算有偏差，尝试修正', {selectedText, verifyText, startPos});
+        
+        // 回退方案：从计算出的近似位置附近搜索
+        const searchStart = Math.max(0, spanRawStart);
+        const searchEnd = Math.min(rawText.length, parseInt(startSpan.dataset.end) + 50);
+        const searchArea = rawText.substring(searchStart, searchEnd);
+        const relativePos = searchArea.indexOf(selectedText, offsetInNode > 10 ? offsetInNode - 10 : 0);
+        
+        if (relativePos !== -1) {
+            startPos = searchStart + relativePos;
+            endPos = startPos + selectedText.length;
+        } else {
+            showToast('无法精确定位选中文本', 'error');
+            selection.removeAllRanges();
+            return;
+        }
+    }
+    
+    // 检查是否与已有实体重叠
     const overlapping = entityAnnotations.some(e => 
         (startPos < e.end_pos && endPos > e.start_pos)
     );
@@ -1226,6 +1294,7 @@ function handleTextSelection(e) {
         return;
     }
     
+    // 设置模态框数据
     document.getElementById('new-entity-text').textContent = selectedText;
     document.getElementById('new-entity-start').value = startPos;
     document.getElementById('new-entity-end').value = endPos;
@@ -1247,7 +1316,8 @@ function addEntity(label) {
             text: text,
             label: label,
             start_pos: startPos,
-            end_pos: endPos
+            end_pos: endPos,
+            is_manual: true  // 新增这行
         })
     })
     .then(r => r.json())
@@ -1287,10 +1357,13 @@ function updateEntity(label) {
     .then(data => {
         if (data.status === 'success') {
             const entity = entityAnnotations.find(e => e.id == entityId);
-            if (entity) entity.label = label;
+            if (entity) {
+                entity.label = label;
+                entity.is_manual = true;  // ✅ 新增：修改过类型的实体标记为手动标注
+            }
             renderAll();
             entityModal.hide();
-            showToast('实体已更新', 'success');
+            showToast('实体已更新（将加入知识库）', 'success');  // 提示信息也更新
         }
     });
 }

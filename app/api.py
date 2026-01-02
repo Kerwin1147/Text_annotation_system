@@ -172,10 +172,12 @@ def save_all_annotations():
             )
             db.session.add(word_ann)
         
-        # 4. 保存实体标注并更新知识库
+        # 4. 保存实体标注，只有手动标注的才更新知识库
+        manual_count = 0
         for entity_data in entity_annotations:
             entity_text = entity_data.get('text', '')
             entity_label = entity_data.get('label', '')
+            is_manual = entity_data.get('is_manual', False)
             
             if not entity_text or not entity_label:
                 continue
@@ -189,17 +191,20 @@ def save_all_annotations():
             )
             db.session.add(entity_ann)
             
-            # 更新知识库
-            existing = KnowledgeEntity.query.filter_by(text=entity_text).first()
-            if existing:
-                existing.frequency += 1
-            else:
-                ke = KnowledgeEntity(
-                    text=entity_text,
-                    label=entity_label,
-                    source='auto'
-                )
-                db.session.add(ke)
+            # 只有手动标注的实体才更新知识库
+            if is_manual:
+                manual_count += 1
+                existing = KnowledgeEntity.query.filter_by(text=entity_text).first()
+                if existing:
+                    existing.frequency += 1
+                    existing.label = entity_label  # 新增：更新为最新类型
+                else:
+                    ke = KnowledgeEntity(
+                        text=entity_text,
+                        label=entity_label,
+                        source='manual'
+                    )
+                    db.session.add(ke)
         
         # 5. 更新文件状态
         text_file.status = FileStatus.PROCESSING
@@ -208,9 +213,10 @@ def save_all_annotations():
         
         return jsonify({
             'status': 'success',
-            'message': '标注已保存到数据库',
+            'message': f'标注已保存到数据库，{manual_count}个手动标注实体已加入知识库',
             'saved_words': len(word_annotations),
-            'saved_entities': len(entity_annotations)
+            'saved_entities': len(entity_annotations),
+            'manual_entities': manual_count
         })
         
     except Exception as e:
@@ -362,7 +368,8 @@ def add_entity():
             'text': text,
             'label': label,
             'start_pos': start_pos,
-            'end_pos': end_pos
+            'end_pos': end_pos,
+            'is_manual': True  # 新增这行
         }
     })
 
