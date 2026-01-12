@@ -1,9 +1,6 @@
 # app/utils.py
 import jieba.posseg as pseg
 from snownlp import SnowNLP
-from flask import current_app
-from app import db
-from app.models import KnowledgeEntity
 import re
 
 # ========== 词性映射 ==========
@@ -16,13 +13,13 @@ POS_12 = {
 # 标点符号集合
 PUNCTUATION_SET = set('，。！？、；：""''【】（）《》〈〉「」『』〔〕…—～·.,!?;:\'\"()[]{}<>@#$%^&*+-=_|\\`~')
 
-# 常见姓氏（扩充）
+# 常见姓氏
 SURNAMES = '王李张刘陈杨黄赵吴周徐孙马朱胡郭何高林罗郑梁谢宋唐许韩冯邓曹彭曾萧田董袁潘蒋蔡余杜叶程苏魏吕丁任沈姚卢姜崔钟谭陆汪范金石廖贾夏韦付方白邹孟熊秦邱江尹薛闫雷侯龙段郝孔邵史毛常万顾赖武康贺严钱施牛洪龚聂路古毕于阎柳华邢莫袁汤殷罗倪严傅章丛鲁韦俞翟葛姬费卞管向欧施柴覃辛'
 
-# 常见名字用字（用于识别普通人名）
+# 常见名字用字
 NAME_CHARS = '伟刚勇毅俊峰强军平保东文辉力明永健世广志义兴良海山仁波宁贵福生龙元全国胜学祥才发武新利清飞彬富顺信子杰涛昌成康星光天达安岩中茂进林有坚和彪博诚先敬震振壮会思群豪心邦承乐绍功松善厚庆磊民友裕河哲江超浩亮政谦亨奇固之轮翰朗伯宏言若鸣朋斌梁栋维启克伦翔旭鹏泽晨辰士以建家致树炎德行时泰盛雄琛钧冠策腾楠榕风航弘秀娟英华慧巧美娜静淑惠珠翠雅芝玉萍红娥玲芬芳燕彩春菊兰凤洁梅琳素云莲真环雪荣爱妹霞香月莺媛艳瑞凡佳嘉琼勤珍贞莉桂娣叶璧璐娅琦晶妍茜秋珊莎锦黛青倩婷姣婉娴瑾颖露瑶怡婵雁蓓纨仪荷丹蓉眉君琴蕊薇菁梦岚苑婕馨瑗琰韵融园艺咏卿聪澜纯毓悦昭冰爽琬茗羽希宁欣飘育滢馥筠柔竹霭凝晓欢霄枫芸菲寒伊亚宜可姬舒影荔枝思丽'
 
-# 排除词（这些不是人名）
+# 人名排除词
 EXCLUDE_NAMES = {
     '我们', '他们', '她们', '你们', '自己', '本人', '对方', '双方', '各方',
     '有关', '相关', '上述', '所有', '其他', '部分', '全部', '本案', '该案',
@@ -234,18 +231,15 @@ def segment_text(content):
     words = list(pseg.cut(content))
     results = []
     
-    current_pos = 0  # 当前字符位置
+    current_pos = 0
     
     for word, flag in words:
         if not word.strip():
-            # 跳过空白但更新位置
             current_pos += len(word)
             continue
         
-        # 查找词语在原文中的实际位置
         actual_pos = content.find(word, current_pos)
         if actual_pos == -1:
-            # 如果找不到，使用当前位置
             actual_pos = current_pos
         
         pos, pos_cn = map_pos_to_12(flag, word)
@@ -258,7 +252,6 @@ def segment_text(content):
             'end_pos': actual_pos + len(word)
         })
         
-        # 更新当前位置
         current_pos = actual_pos + len(word)
     
     return results
@@ -281,6 +274,41 @@ def add_entity_if_no_overlap(entity, entities):
         entities.append(entity)
         return True
     return False
+
+
+def get_char_before(content, pos, count=1):
+    """获取指定位置前的字符"""
+    start = max(0, pos - count)
+    return content[start:pos]
+
+
+def get_char_after(content, pos, count=1):
+    """获取指定位置后的字符"""
+    end = min(len(content), pos + count)
+    return content[pos:end]
+
+
+def is_valid_entity_boundary(content, start, end):
+    """检查实体边界是否合理（不在词语中间）"""
+    # 检查前一个字符是否是中文（可能是词语的一部分）
+    if start > 0:
+        char_before = content[start - 1]
+        # 如果前一个字符是中文且不是标点，可能边界不对
+        if '\u4e00' <= char_before <= '\u9fff' and char_before not in PUNCTUATION_SET:
+            # 进一步检查是否是常见的前缀词
+            prefix_2 = content[max(0, start-2):start]
+            prefix_3 = content[max(0, start-3):start]
+            bad_prefixes = {'这个', '那个', '某个', '一个', '每个', '各个', '哪个', 
+                           '这家', '那家', '某家', '一家', '每家', '各家',
+                           '这所', '那所', '某所', '一所', '每所', '各所',
+                           '这座', '那座', '某座', '一座', '每座', '各座',
+                           '该', '本', '某', '各', '每', '此'}
+            if prefix_2 in bad_prefixes or prefix_3 in bad_prefixes:
+                return False
+            if content[start-1] in bad_prefixes:
+                return False
+    
+    return True
 
 
 # ========== 实体识别核心算法 ==========
@@ -419,7 +447,7 @@ def recognize_person_entities(content):
             'end_pos': end
         })
     
-    # 2. 已知公众人物
+    # 2. 已知公众人物（高置信度）
     known_persons = [
         '习近平', '李强', '赵乐际', '王沪宁', '蔡奇', '丁薛祥', '李希',
         '卢拉', '特朗普', '拜登', '普京', '马克龙', '岸田文雄', '莫迪',
@@ -440,7 +468,7 @@ def recognize_person_entities(content):
                     'end_pos': match.end()
                 })
     
-    # 3. 姓+两个字的名
+    # 3. 姓+两个字的名（需要上下文验证）
     pattern_3char = r'[' + SURNAMES + r'][' + NAME_CHARS + r']{2}'
     for match in re.finditer(pattern_3char, content):
         text = match.group()
@@ -453,6 +481,7 @@ def recognize_person_entities(content):
         overlap, _ = check_overlap({'start_pos': start, 'end_pos': end}, entities)
         
         if not overlap:
+            # 检查边界
             if start > 0 and content[start-1] in NAME_CHARS:
                 continue
             if end < len(content) and content[end] in NAME_CHARS:
@@ -518,75 +547,139 @@ def recognize_person_entities(content):
     return sorted(entities, key=lambda x: x['start_pos'])
 
 
+# ========== 地名识别（严格模式）==========
+
+# 确定的地名白名单（只有这些才会被识别）
+KNOWN_LOCATIONS = {
+    # 中国省级行政区
+    '北京', '天津', '上海', '重庆', '河北', '山西', '辽宁', '吉林', '黑龙江',
+    '江苏', '浙江', '安徽', '福建', '江西', '山东', '河南', '湖北', '湖南',
+    '广东', '海南', '四川', '贵州', '云南', '陕西', '甘肃', '青海', '台湾',
+    '内蒙古', '广西', '西藏', '宁夏', '新疆', '香港', '澳门',
+    # 主要城市
+    '石家庄', '唐山', '秦皇岛', '邯郸', '邢台', '保定', '张家口', '承德',
+    '太原', '大同', '沈阳', '大连', '鞍山', '长春', '哈尔滨',
+    '南京', '苏州', '无锡', '常州', '徐州', '杭州', '宁波', '温州', '嘉兴',
+    '合肥', '芜湖', '福州', '厦门', '泉州', '南昌', '济南', '青岛', '烟台',
+    '郑州', '洛阳', '武汉', '宜昌', '长沙', '株洲', '广州', '深圳', '珠海',
+    '东莞', '佛山', '中山', '惠州', '海口', '三亚', '成都', '绵阳', '贵阳',
+    '昆明', '西安', '咸阳', '兰州', '西宁', '银川', '乌鲁木齐', '拉萨',
+    '呼和浩特', '包头', '南宁', '桂林', '柳州',
+    # 国家
+    '美国', '英国', '法国', '德国', '日本', '韩国', '俄罗斯', '加拿大',
+    '澳大利亚', '新西兰', '印度', '巴西', '墨西哥', '阿根廷', '南非',
+    '埃及', '沙特', '伊朗', '伊拉克', '以色列', '土耳其', '泰国', '越南',
+    '新加坡', '马来西亚', '印尼', '菲律宾', '意大利', '西班牙', '葡萄牙',
+    '荷兰', '比利时', '瑞士', '瑞典', '挪威', '丹麦', '芬兰', '波兰',
+    '乌克兰', '希腊', '奥地利', '捷克', '匈牙利', '罗马尼亚', '朝鲜',
+    # 国际城市
+    '纽约', '华盛顿', '洛杉矶', '旧金山', '芝加哥', '波士顿', '西雅图',
+    '伦敦', '巴黎', '柏林', '罗马', '马德里', '阿姆斯特丹', '布鲁塞尔',
+    '东京', '大阪', '京都', '首尔', '釜山', '莫斯科', '悉尼', '墨尔本',
+    '多伦多', '温哥华', '迪拜', '新德里', '孟买', '曼谷', '河内', '雅加达',
+}
+
+# 地名相关的排除词（这些不是地名）
+LOCATION_EXCLUDE = {
+    '这里', '那里', '哪里', '这儿', '那儿', '哪儿', '何处', '何地',
+    '本地', '当地', '外地', '异地', '原地', '此地', '彼地',
+    '东方', '西方', '南方', '北方', '前方', '后方', '上方', '下方',
+    '东边', '西边', '南边', '北边', '左边', '右边', '前边', '后边',
+    '东面', '西面', '南面', '北面', '前面', '后面', '上面', '下面',
+    '东部', '西部', '南部', '北部', '中部', '内部', '外部',
+    '附近', '周围', '旁边', '身边', '眼前', '面前', '背后', '身后',
+    '远方', '远处', '近处', '高处', '低处', '深处',
+    '国内', '国外', '海内', '海外', '境内', '境外', '省内', '省外',
+    '城内', '城外', '市内', '市外', '县内', '县外', '区内', '区外',
+    '室内', '室外', '门内', '门外', '院内', '院外', '校内', '校外',
+    '家里', '家中', '家外', '屋里', '屋内', '屋外', '房内', '房外',
+    '地方', '地点', '地区', '地带', '地域', '地段', '地块',
+    '位置', '方位', '方向', '去向', '走向', '朝向', '取向',
+    '场所', '场地', '场合', '处所', '住所', '居所',
+    '途中', '路上', '路边', '路旁', '路口', '街上', '街头', '街边',
+    '山上', '山下', '山中', '山里', '山顶', '山脚', '山腰',
+    '水中', '水下', '水上', '水边', '水面', '河边', '河中', '河上',
+    '天上', '天下', '天空', '空中', '地上', '地下', '地面', '地底',
+    '世界', '全球', '全国', '各地', '各处', '处处', '到处', '四处',
+    '农村', '城市', '城镇', '乡村', '乡下', '郊区', '郊外', '市区',
+}
+
+# 地名后缀（用于模式匹配验证）
+LOCATION_SUFFIXES = {'省', '市', '县', '区', '镇', '乡', '村', '街道'}
+
+
 def recognize_location_entities(content):
-    """识别地名实体"""
+    """识别地名实体（严格模式）"""
     entities = []
     
-    # 中国省级行政区
-    provinces = [
-        '北京', '天津', '上海', '重庆', '河北', '山西', '辽宁', '吉林', '黑龙江',
-        '江苏', '浙江', '安徽', '福建', '江西', '山东', '河南', '湖北', '湖南',
-        '广东', '海南', '四川', '贵州', '云南', '陕西', '甘肃', '青海', '台湾',
-        '内蒙古', '广西', '西藏', '宁夏', '新疆', '香港', '澳门',
-    ]
-    
-    # 主要城市
-    cities = [
-        '石家庄', '唐山', '秦皇岛', '邯郸', '邢台', '保定', '张家口', '承德',
-        '太原', '大同', '沈阳', '大连', '鞍山', '长春', '吉林市', '哈尔滨',
-        '南京', '苏州', '无锡', '常州', '徐州', '杭州', '宁波', '温州', '嘉兴',
-        '合肥', '芜湖', '福州', '厦门', '泉州', '南昌', '济南', '青岛', '烟台',
-        '郑州', '洛阳', '武汉', '宜昌', '长沙', '株洲', '广州', '深圳', '珠海',
-        '东莞', '佛山', '中山', '惠州', '海口', '三亚', '成都', '绵阳', '贵阳',
-        '昆明', '西安', '咸阳', '兰州', '西宁', '银川', '乌鲁木齐', '拉萨',
-        '呼和浩特', '包头', '南宁', '桂林', '柳州',
-    ]
-    
-    # 国际地名
-    international = [
-        '美国', '英国', '法国', '德国', '日本', '韩国', '俄罗斯', '加拿大',
-        '澳大利亚', '新西兰', '印度', '巴西', '墨西哥', '阿根廷', '南非',
-        '埃及', '沙特', '伊朗', '伊拉克', '以色列', '土耳其', '泰国', '越南',
-        '新加坡', '马来西亚', '印尼', '菲律宾', '意大利', '西班牙', '葡萄牙',
-        '荷兰', '比利时', '瑞士', '瑞典', '挪威', '丹麦', '芬兰', '波兰',
-        '乌克兰', '希腊', '奥地利', '捷克', '匈牙利', '罗马尼亚',
-        '纽约', '华盛顿', '洛杉矶', '旧金山', '芝加哥', '波士顿', '西雅图',
-        '伦敦', '巴黎', '柏林', '罗马', '马德里', '阿姆斯特丹', '布鲁塞尔',
-        '东京', '大阪', '京都', '首尔', '釜山', '莫斯科', '悉尼', '墨尔本',
-        '多伦多', '温哥华', '迪拜', '新德里', '孟买', '曼谷', '河内', '雅加达',
-    ]
-    
-    all_locations = provinces + cities + international
-    
-    for loc in all_locations:
+    # 1. 只匹配已知地名白名单
+    for loc in KNOWN_LOCATIONS:
+        if loc in LOCATION_EXCLUDE:
+            continue
         for match in re.finditer(re.escape(loc), content):
-            overlap, _ = check_overlap({
-                'start_pos': match.start(),
-                'end_pos': match.end()
+            start = match.start()
+            end = match.end()
+            
+            # 检查是否已被更长的实体覆盖
+            overlap, existing = check_overlap({
+                'start_pos': start,
+                'end_pos': end
             }, entities)
+            
             if not overlap:
+                # 检查边界：确保不是更长词语的一部分
+                if start > 0:
+                    char_before = content[start - 1]
+                    # 如果前面是中文字符，检查是否构成其他词
+                    if '\u4e00' <= char_before <= '\u9fff':
+                        # 允许的前缀
+                        allowed_prefix = {'在', '到', '去', '来', '从', '经', '由', '往', '赴', '回', '离'}
+                        if char_before not in allowed_prefix:
+                            # 检查前两个字是否构成排除词
+                            prefix_word = content[max(0, start-2):end]
+                            if prefix_word in LOCATION_EXCLUDE:
+                                continue
+                
+                if end < len(content):
+                    char_after = content[end]
+                    # 如果后面紧跟地名后缀，说明当前匹配不完整
+                    if char_after in LOCATION_SUFFIXES:
+                        continue
+                
                 entities.append({
                     'text': loc,
                     'label': '地名',
-                    'start_pos': match.start(),
-                    'end_pos': match.end()
+                    'start_pos': start,
+                    'end_pos': end
                 })
     
-    # 地名模式匹配
-    location_patterns = [
-        r'[^\s，。！？、；：""'']{2,6}(?:省|市|县|区|镇|乡|村|街道|路|街|巷|弄|号|大道|广场|公园|医院|学校|大学|学院|中学|小学|幼儿园)',
-        r'[^\s，。！？、；：""'']{2,4}(?:机场|火车站|汽车站|地铁站|港口|码头|高速|国道|省道)',
+    # 2. 匹配带有明确后缀的完整地名（如 XX省、XX市）
+    # 只匹配那些前面有明确边界的
+    strict_location_patterns = [
+        # 使用字符类中的字面引号，不需要转义
+        (r'(?<=[，。！？、；："\'（）\s在到去来从经由往赴回离])([^\s，。！？、；："\'（）]{2,4}(?:省|自治区))', 'province'),
+        (r'(?<=[，。！？、；："\'（）\s在到去来从经由往赴回离])([^\s，。！？、；："\'（）]{2,4}(?:市|自治州))', 'city'),
+        (r'(?<=[，。！？、；："\'（）\s在到去来从经由往赴回离])([^\s，。！？、；："\'（）]{2,4}(?:县|自治县))', 'county'),
     ]
     
-    for pattern in location_patterns:
+    for pattern, loc_type in strict_location_patterns:
         try:
             for match in re.finditer(pattern, content):
-                text = match.group().strip()
-                start = match.start()
-                end = match.end()
+                text = match.group(1) if match.lastindex else match.group()
+                start = match.start(1) if match.lastindex else match.start()
+                end = match.end(1) if match.lastindex else match.end()
                 
-                # 过滤无效结果
-                if len(text) < 3 or len(text) > 15:
+                # 长度验证
+                if len(text) < 3 or len(text) > 8:
+                    continue
+                
+                # 排除词检查
+                if text in LOCATION_EXCLUDE:
+                    continue
+                
+                # 检查是否包含不应该的字符
+                invalid_chars = {'的', '了', '着', '过', '和', '与', '或', '及', '等', '很', '太', '更', '最'}
+                if any(c in text for c in invalid_chars):
                     continue
                 
                 overlap, existing = check_overlap({
@@ -595,6 +688,7 @@ def recognize_location_entities(content):
                 }, entities)
                 
                 if overlap:
+                    # 如果新实体更长，替换旧的
                     if existing and len(text) > len(existing['text']):
                         entities.remove(existing)
                         entities.append({
@@ -616,58 +710,188 @@ def recognize_location_entities(content):
     return sorted(entities, key=lambda x: x['start_pos'])
 
 
+# ========== 组织机构识别（严格模式）==========
+
+# 确定的机构白名单
+KNOWN_ORGANIZATIONS = {
+    # 国家机构
+    '中国共产党', '国务院', '全国人大', '全国政协', '中央军委',
+    '最高人民法院', '最高人民检察院', '中国人民银行', '外交部', '国防部',
+    '发改委', '教育部', '科技部', '工信部', '公安部', '财政部', '商务部',
+    '中央纪委', '中央组织部', '中央宣传部', '中央统战部',
+    # 国际组织
+    '联合国', '世界卫生组织', '世贸组织', '国际货币基金组织', '世界银行',
+    '欧盟', '东盟', '北约', '亚投行', '金砖国家', '上合组织',
+    # 知名企业
+    '阿里巴巴', '腾讯', '百度', '京东', '华为', '小米', '字节跳动', '美团',
+    '苹果公司', '谷歌', '微软', '亚马逊', '特斯拉', '脸书', '推特',
+    '中国移动', '中国联通', '中国电信', '中国石油', '中国石化',
+    '工商银行', '建设银行', '农业银行', '中国银行', '招商银行',
+    # 知名高校
+    '清华大学', '北京大学', '复旦大学', '上海交通大学', '浙江大学',
+    '南京大学', '中国科技大学', '武汉大学', '中山大学', '华中科技大学',
+    '哈尔滨工业大学', '西安交通大学', '同济大学', '北京师范大学',
+    # 科研机构
+    '中国科学院', '中国工程院', '中国社会科学院',
+    # 媒体
+    '新华社', '人民日报', '中央电视台', 'CCTV', '央视', '中新社',
+}
+
+# 组织机构排除词（这些不是机构名）
+ORG_EXCLUDE = {
+    # 代词性质
+    '这家公司', '那家公司', '某家公司', '一家公司', '该公司', '本公司',
+    '这所学校', '那所学校', '某所学校', '一所学校', '该学校', '本学校',
+    '这家医院', '那家医院', '某家医院', '一家医院', '该医院', '本医院',
+    '这个机构', '那个机构', '某个机构', '一个机构', '该机构', '本机构',
+    '这家银行', '那家银行', '某家银行', '一家银行', '该银行', '本银行',
+    # 泛指
+    '有关部门', '相关部门', '主管部门', '上级部门', '下级部门',
+    '有关单位', '相关单位', '有关机构', '相关机构',
+    '有限公司', '股份公司', '责任公司',  # 单独出现时不是完整机构名
+    '公司', '企业', '单位', '机构', '组织', '部门', '学校', '医院', '银行',
+    '大学', '学院', '中学', '小学', '幼儿园', '研究院', '研究所',
+    '法院', '检察院', '公安局', '派出所',
+    '政府', '党委', '人大', '政协', '纪委',
+    '协会', '学会', '联合会', '商会', '基金会',
+    # 常见误识别
+    '的公司', '了公司', '和公司', '或公司',
+    '的学校', '了学校', '和学校', '或学校',
+    '的医院', '了医院', '和医院', '或医院',
+    '个公司', '家公司', '些公司',
+    '个学校', '所学校', '些学校',
+    '个医院', '家医院', '些医院',
+}
+
+# 机构名中不应该包含的字符
+ORG_INVALID_CHARS = {
+    '的', '了', '着', '过', '和', '与', '或', '及', '等',
+    '很', '太', '更', '最', '就', '才', '又', '也', '都',
+    '这', '那', '哪', '某', '每', '各', '任何',
+    '我', '你', '他', '她', '它', '们',
+    '什么', '怎么', '为什么', '如何',
+}
+
+# 有效的机构前缀词（必须以这些开头或前面是标点/空格）
+ORG_VALID_PREFIXES = {
+    # 地名（作为机构前缀）
+    '中国', '中华', '全国', '国家', '国际',
+    '北京', '上海', '广州', '深圳', '天津', '重庆',
+    '江苏', '浙江', '广东', '山东', '河南', '四川', '湖北', '湖南',
+    '省', '市', '县', '区',
+}
+
+
+def is_valid_org_name(text, content, start):
+    """验证是否是有效的机构名"""
+    # 长度检查
+    if len(text) < 4 or len(text) > 20:
+        return False
+    
+    # 排除词检查
+    if text in ORG_EXCLUDE:
+        return False
+    
+    # 检查是否包含无效字符
+    for char in ORG_INVALID_CHARS:
+        if char in text:
+            return False
+    
+    # 检查前缀是否合理
+    if start > 0:
+        # 获取前面的字符
+        prefix_1 = content[start - 1] if start >= 1 else ''
+        prefix_2 = content[start - 2:start] if start >= 2 else ''
+        prefix_3 = content[start - 3:start] if start >= 3 else ''
+        
+        # 如果前面是中文字符，需要特别验证
+        if prefix_1 and '\u4e00' <= prefix_1 <= '\u9fff':
+            # 不允许的前缀
+            bad_single = {'这', '那', '哪', '某', '该', '本', '个', '家', '所', '些', '的', '了', '和', '或', '是', '有'}
+            if prefix_1 in bad_single:
+                return False
+            
+            bad_double = {'这个', '那个', '某个', '一个', '这家', '那家', '某家', '一家', 
+                         '这所', '那所', '某所', '一所', '每个', '各个', '哪个'}
+            if prefix_2 in bad_double:
+                return False
+            
+            bad_triple = {'这一家', '那一家', '某一家'}
+            if prefix_3 in bad_triple:
+                return False
+            
+            # 允许的前缀（介词等）
+            allowed_prefix = {'在', '到', '去', '来', '从', '经', '由', '往', '赴', '向', '为', '与', '和', '被', '把', '对'}
+            # 如果前面不是允许的前缀，也不是标点，则拒绝
+            if prefix_1 not in allowed_prefix and prefix_1 not in PUNCTUATION_SET:
+                # 检查是否是地名前缀的一部分
+                is_location_prefix = False
+                for loc in KNOWN_LOCATIONS:
+                    if text.startswith(loc):
+                        is_location_prefix = True
+                        break
+                if not is_location_prefix:
+                    # 再检查前两个字是否构成有效前缀
+                    if prefix_2 not in ORG_VALID_PREFIXES:
+                        return False
+    
+    return True
+
+
 def recognize_organization_entities(content):
-    """识别组织机构实体"""
+    """识别组织机构实体（严格模式）"""
     entities = []
     
-    # 知名组织机构
-    known_orgs = [
-        '中国共产党', '国务院', '全国人大', '全国政协', '中央军委',
-        '最高人民法院', '最高人民检察院', '中国人民银行', '外交部', '国防部',
-        '发改委', '教育部', '科技部', '工信部', '公安部', '财政部', '商务部',
-        '联合国', '世界卫生组织', '世贸组织', '国际货币基金组织', '世界银行',
-        '欧盟', '东盟', '北约', '亚投行', '金砖国家',
-        '阿里巴巴', '腾讯', '百度', '京东', '华为', '小米', '字节跳动', '美团',
-        '苹果公司', '谷歌', '微软', '亚马逊', '特斯拉', '脸书', '推特',
-        '清华大学', '北京大学', '复旦大学', '上海交通大学', '浙江大学',
-        '中国科学院', '中国工程院', '中国社会科学院',
-        '新华社', '人民日报', '中央电视台', 'CCTV', '央视',
-    ]
-    
-    for org in known_orgs:
+    # 1. 只匹配已知机构白名单
+    for org in KNOWN_ORGANIZATIONS:
         for match in re.finditer(re.escape(org), content):
+            start = match.start()
+            end = match.end()
+            
             overlap, _ = check_overlap({
-                'start_pos': match.start(),
-                'end_pos': match.end()
+                'start_pos': start,
+                'end_pos': end
             }, entities)
+            
             if not overlap:
                 entities.append({
                     'text': org,
                     'label': '组织机构',
-                    'start_pos': match.start(),
-                    'end_pos': match.end()
+                    'start_pos': start,
+                    'end_pos': end
                 })
     
-    # 组织机构模式
-    org_patterns = [
-        r'[^\s，。！？、；：""'']{2,10}(?:公司|集团|企业|银行|保险|证券|基金|信托)',
-        r'[^\s，。！？、；：""'']{2,8}(?:大学|学院|中学|小学|学校|研究院|研究所|实验室)',
-        r'[^\s，。！？、；：""'']{2,8}(?:医院|诊所|卫生院|疾控中心)',
-        r'[^\s，。！？、；：""'']{2,8}(?:法院|检察院|公安局|派出所|司法局)',
-        r'[^\s，。！？、；：""'']{2,8}(?:政府|党委|人大|政协|纪委|组织部|宣传部)',
-        r'[^\s，。！？、；：""'']{2,8}(?:局|厅|部|委|办|处|科|股|室)',
-        r'[^\s，。！？、；：""'']{2,8}(?:协会|学会|联合会|商会|基金会|促进会)',
-        r'[^\s，。！？、；：""'']{2,6}(?:有限公司|股份有限公司|责任公司)',
+    # 2. 严格的模式匹配（只匹配高置信度的）
+    # 要求前面必须是标点、空格或特定动词
+    boundary_prefix = r'(?<=[，。！？、；："\'（）【】\s]|^)'
+    
+    strict_org_patterns = [
+        # XX大学、XX学院（前面必须是边界）
+        (boundary_prefix + r'((?:北京|清华|北大|复旦|上海|浙江|南京|武汉|中山|华中|哈尔滨|西安|同济|厦门|天津|南开|吉林|山东|四川|中国|中央)[^\s，。！？、；：""''（）]{0,6}(?:大学|学院))', 'university'),
+        # XX公司（必须有具体名称）
+        (boundary_prefix + r'((?:阿里|腾讯|百度|华为|小米|京东|美团|字节|网易|新浪|搜狐|滴滴)[^\s，。！？、；：""''（）]{0,8}(?:公司|集团|科技)?)', 'company'),
+        # XX银行（前面必须是边界）
+        (boundary_prefix + r'((?:中国|工商|建设|农业|交通|招商|浦发|民生|光大|中信|兴业|平安)[^\s，。！？、；：""''（）]{0,4}银行)', 'bank'),
+        # XX医院（必须有具体地名或专有名词）
+        (boundary_prefix + r'((?:北京|上海|广州|深圳|协和|同仁|华山|瑞金|湘雅|华西|中山)[^\s，。！？、；：""''（）]{0,6}医院)', 'hospital'),
     ]
     
-    for pattern in org_patterns:
+    for pattern, org_type in strict_org_patterns:
         try:
             for match in re.finditer(pattern, content):
-                text = match.group().strip()
-                start = match.start()
-                end = match.end()
+                text = match.group(1) if match.lastindex else match.group()
+                # 计算实际位置
+                full_match = match.group(0)
+                offset = len(full_match) - len(text)
+                start = match.start() + offset
+                end = start + len(text)
                 
-                if len(text) < 4 or len(text) > 20:
+                # 验证机构名
+                if not is_valid_org_name(text, content, start):
+                    continue
+                
+                # 排除词检查
+                if text in ORG_EXCLUDE:
                     continue
                 
                 overlap, existing = check_overlap({
@@ -694,66 +918,175 @@ def recognize_organization_entities(content):
         except re.error:
             continue
     
+    # 3. 带有完整后缀的机构名（非常严格）
+    # 只匹配 "XX有限公司"、"XX股份有限公司" 等完整形式
+    # 要求前面必须是明确的边界
+    full_company_pattern = r'(?<=[，。！？、；："\'（）【】\s在到去来从经由往赴向为与和被把对])([^\s，。！？、；："\'（）【】的了着过]{2,10}(?:有限公司|股份有限公司|责任有限公司|集团有限公司|集团公司))'
+    try:
+        for match in re.finditer(full_company_pattern, content):
+            text = match.group(1)
+            start = match.start(1)
+            end = match.end(1)
+            
+            # 验证
+            if not is_valid_org_name(text, content, start):
+                continue
+            
+            # 额外检查：确保不是泛指
+            if text.startswith(('这', '那', '某', '该', '本', '一家', '一个')):
+                continue
+            
+            overlap, existing = check_overlap({
+                'start_pos': start,
+                'end_pos': end
+            }, entities)
+            
+            if not overlap:
+                entities.append({
+                    'text': text,
+                    'label': '组织机构',
+                    'start_pos': start,
+                    'end_pos': end
+                })
+    except re.error:
+        pass
+    
     return sorted(entities, key=lambda x: x['start_pos'])
 
 
 def recognize_entities_from_knowledge(content):
-    """从知识库匹配实体"""
+    """从知识库匹配实体（高优先级）"""
     entities = []
     
     try:
+        from app.models import KnowledgeEntity
         knowledge_entities = KnowledgeEntity.query.all()
         
         for ke in knowledge_entities:
+            # 知识库中的实体是可信的，直接匹配
             for match in re.finditer(re.escape(ke.text), content):
+                start = match.start()
+                end = match.end()
+                
+                # 简单的边界检查
+                # 检查前面是否是中文字符（可能是词语的一部分）
+                if start > 0:
+                    char_before = content[start - 1]
+                    if '\u4e00' <= char_before <= '\u9fff':
+                        # 如果知识库实体较短（2-3字），需要更严格的边界检查
+                        if len(ke.text) <= 3:
+                            # 检查是否有不良前缀
+                            bad_prefixes = {'这', '那', '某', '该', '本', '个', '家', '所'}
+                            if char_before in bad_prefixes:
+                                continue
+                
+                # 检查后面
+                if end < len(content):
+                    char_after = content[end]
+                    # 如果后面还是中文，可能不是完整的实体
+                    if '\u4e00' <= char_after <= '\u9fff':
+                        # 对于人名，检查是否后面跟着名字常用字
+                        if ke.label == '人名' and char_after in NAME_CHARS:
+                            continue
+                
                 entities.append({
                     'text': ke.text,
                     'label': ke.label,
-                    'start_pos': match.start(),
-                    'end_pos': match.end(),
+                    'start_pos': start,
+                    'end_pos': end,
                     'from_knowledge': True
                 })
-    except Exception as e:
+    except Exception:
+        # 知识库不可用时静默失败
         pass
     
     return entities
 
 
+def merge_overlapping_entities(entities):
+    """合并重叠的实体，保留更长或更优先的"""
+    if not entities:
+        return []
+    
+    # 按起始位置排序
+    sorted_entities = sorted(entities, key=lambda x: (x['start_pos'], -len(x['text'])))
+    
+    merged = []
+    for entity in sorted_entities:
+        if not merged:
+            merged.append(entity)
+            continue
+        
+        last = merged[-1]
+        # 检查是否重叠
+        if entity['start_pos'] < last['end_pos']:
+            # 重叠了，保留更长的那个
+            if len(entity['text']) > len(last['text']):
+                merged[-1] = entity
+            # 如果长度相同，保留知识库来源的
+            elif len(entity['text']) == len(last['text']):
+                if entity.get('from_knowledge') and not last.get('from_knowledge'):
+                    merged[-1] = entity
+            # 否则保留原来的
+        else:
+            merged.append(entity)
+    
+    return merged
+
+
 def recognize_entities(content):
-    """综合实体识别"""
+    """
+    综合实体识别（严格模式）
+    
+    策略：
+    1. 知识库匹配优先（用户标注过的实体）
+    2. 时间日期识别（模式明确，误识别率低）
+    3. 数值金额识别（模式明确，误识别率低）
+    4. 人名识别（需要上下文验证）
+    5. 地名识别（严格白名单模式）
+    6. 组织机构识别（严格白名单+模式验证）
+    """
     if not content:
         return []
     
     all_entities = []
     
-    # 1. 知识库匹配（最高优先级）
+    # 1. 知识库匹配（最高优先级，用户验证过的实体）
     knowledge_entities = recognize_entities_from_knowledge(content)
     for e in knowledge_entities:
         add_entity_if_no_overlap(e, all_entities)
     
-    # 2. 时间日期
+    # 2. 时间日期识别（误识别率低）
     time_entities = recognize_time_entities(content)
     for e in time_entities:
         add_entity_if_no_overlap(e, all_entities)
     
-    # 3. 数值金额
+    # 3. 数值金额识别（误识别率低）
     amount_entities = recognize_amount_entities(content)
     for e in amount_entities:
         add_entity_if_no_overlap(e, all_entities)
     
-    # 4. 人名
+    # 4. 人名识别
     person_entities = recognize_person_entities(content)
     for e in person_entities:
         add_entity_if_no_overlap(e, all_entities)
     
-    # 5. 地名
+    # 5. 地名识别（严格白名单模式）
     location_entities = recognize_location_entities(content)
     for e in location_entities:
         add_entity_if_no_overlap(e, all_entities)
     
-    # 6. 组织机构
+    # 6. 组织机构识别（严格模式）
     org_entities = recognize_organization_entities(content)
     for e in org_entities:
         add_entity_if_no_overlap(e, all_entities)
+    
+    # 最终合并和排序
+    all_entities = merge_overlapping_entities(all_entities)
+    
+    # 清理结果，移除 from_knowledge 标记（前端不需要）
+    for e in all_entities:
+        if 'from_knowledge' in e:
+            del e['from_knowledge']
     
     return sorted(all_entities, key=lambda x: x['start_pos'])

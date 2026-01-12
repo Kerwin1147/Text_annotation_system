@@ -16,7 +16,6 @@ def create_app():
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
     app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
     
-    # ============ 已删除 uploads 相关配置 ============
     # 文件直接读取内容存入数据库，不需要保存到文件系统
     app.config['ALLOWED_EXTENSIONS'] = {'txt', 'csv'}
     

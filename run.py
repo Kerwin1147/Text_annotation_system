@@ -113,7 +113,6 @@ if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     debug = os.environ.get('FLASK_ENV', 'development') == 'development'
     
-    # ============ 关键修改：只在主进程打印启动信息 ============
     # 检查是否是 reloader 子进程，避免重复打印
     if os.environ.get('WERKZEUG_RUN_MAIN') != 'true':
         print('\n' + '=' * 60)

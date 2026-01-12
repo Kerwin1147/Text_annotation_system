@@ -239,9 +239,3 @@ def knowledge():
                          total=total_entities,
                          search=search,
                          label_filter=label_filter)
-
-
-@views_bp.route('/help')
-def help_page():
-    """帮助文档页面"""
-    return render_template('help.html')

@@ -198,6 +198,9 @@
 | DELETE | `/api/knowledge/delete/<entity_id>` | 删除知识实体 |
 | GET | `/api/knowledge/export` | 导出知识库 |
 | GET | `/api/stats` | 获取统计信息 |
+| POST | `/api/knowledge/batch_delete` | 批量删除知识实体 |
+| GET | `/api/pos-tags` | 获取词性标签列表 |
+| GET | `/api/entity-types` | 获取实体类型列表 |
 
 ## 🖼️ 界面预览
 

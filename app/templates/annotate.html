@@ -926,7 +926,6 @@ function renderEntityMode() {
     container.innerHTML = html;
 }
 
-// 新增：HTML 转义函数，防止 XSS
 function escapeHtml(text) {
     const div = document.createElement('div');
     div.textContent = text;
@@ -1138,8 +1137,6 @@ function clearSelection() {
     updateEditToolbar();
 }
 
-// 修复：合并后直接使用返回的数据，不再调用智能标注
-// 修复：合并时传递词语数据给后端
 function mergeSelected() {
     if (selectedWords.length < 2) {
         showToast('请至少选择2个词', 'error');
@@ -1151,7 +1148,7 @@ function mergeSelected() {
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({
             word_ids: selectedWords,
-            words_data: wordAnnotations  // 新增：传递词语数据
+            words_data: wordAnnotations
         })
     })
     .then(r => r.json())
@@ -1222,8 +1219,6 @@ function handleTextSelection(e) {
     if (selectedText.length === 0) return;
     
     const range = selection.getRangeAt(0);
-    
-    // ========== 关键修改：获取实际选中位置 ==========
     
     // 找到选区起始所在的 span 元素
     let startNode = range.startContainer;
@@ -1317,7 +1312,7 @@ function addEntity(label) {
             label: label,
             start_pos: startPos,
             end_pos: endPos,
-            is_manual: true  // 新增这行
+            is_manual: true
         })
     })
     .then(r => r.json())
@@ -1359,11 +1354,11 @@ function updateEntity(label) {
             const entity = entityAnnotations.find(e => e.id == entityId);
             if (entity) {
                 entity.label = label;
-                entity.is_manual = true;  // ✅ 新增：修改过类型的实体标记为手动标注
+                entity.is_manual = true;
             }
             renderAll();
             entityModal.hide();
-            showToast('实体已更新（将加入知识库）', 'success');  // 提示信息也更新
+            showToast('实体已更新（将加入知识库）', 'success');
         }
     });
 }
@@ -1386,7 +1381,6 @@ function deleteEntity() {
 }
 
 // ========== 智能标注 ==========
-// ========== 智能标注（修改：提示未保存）==========
 function smartAnnotate() {
     if (!confirm('智能标注将清除当前标注，是否继续？')) return;
     
@@ -1405,7 +1399,6 @@ function smartAnnotate() {
             }
             
             renderAll();
-            // 修改：提示需要保存
             showToast('智能标注完成，请点击"保存标注"写入数据库', 'success');
         } else {
             showToast(data.message || '智能标注失败', 'error');
@@ -1417,14 +1410,13 @@ function smartAnnotate() {
 }
 
 // ========== 保存和清空 ==========
-// ========== 保存标注（修改：发送完整数据）==========
 function saveAllAnnotations() {
     const data = {
         file_id: fileId,
         text_category: document.getElementById('text-category').value,
         text_sentiment: document.getElementById('text-sentiment').value,
-        word_annotations: wordAnnotations,      // 新增：发送词语数据
-        entity_annotations: entityAnnotations   // 新增：发送实体数据
+        word_annotations: wordAnnotations,
+        entity_annotations: entityAnnotations
     };
     
     fetch('/api/save_all_annotations', {
